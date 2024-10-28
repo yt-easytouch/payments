@@ -4,7 +4,7 @@
 
 frappe.ui.form.on("Razorpay Settings", {
   refresh: function (frm) {
-    frm.add_custom_button("Clear", function () {
+    frm.add_custom_button(__("Clear"), function () {
       frm.call({
         doc: frm.doc,
         method: "clear",
