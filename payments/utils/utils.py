@@ -5,6 +5,11 @@ from contextlib import contextmanager
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
+def validate_integration_request(docname: str | None):
+	if frappe.db.get_value("Integration Request", docname, "status") == "Cancelled":
+		frappe.throw(_("Expired Token"))
+
+
 def get_payment_gateway_controller(payment_gateway):
 	"""Return payment gateway controller"""
 	gateway = frappe.get_doc("Payment Gateway", payment_gateway)
