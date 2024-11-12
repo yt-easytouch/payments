@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "autoname": "field:gateway_name",
+ "creation": "2024-11-01 19:45:09.498041",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "gateway_name",
+  "merchant_id",
+  "merchant_key",
+  "staging",
+  "column_break_4",
+  "user_id",
+  "endpoint"
+ ],
+ "fields": [
+  {
+   "fieldname": "merchant_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Merchant ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "merchant_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Merchant Key",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "staging",
+   "fieldtype": "Check",
+   "label": "Demo"
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "user_id",
+   "fieldtype": "Data",
+   "label": "User ID",
+   "mandatory_depends_on": "eval: !doc.staging"
+  },
+  {
+   "default": "https://api.waafipay.net/asm",
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "endpoint",
+   "fieldtype": "Data",
+   "label": "Endpoint",
+   "mandatory_depends_on": "eval: !doc.staging"
+  },
+  {
+   "fieldname": "gateway_name",
+   "fieldtype": "Data",
+   "label": "Payment Gateway Name",
+   "reqd": 1,
+   "unique": 1
+  }
+ ],
+ "links": [],
+ "modified": "2024-11-01 20:25:10.392140",
+ "modified_by": "Administrator",
+ "module": "Payment Gateways",
+ "name": "WaafiPay",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "quick_entry": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
