@@ -1,0 +1,94 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:gateway_name",
+ "creation": "2025-07-01 14:43:53.328626",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "gateway_name",
+  "merchant_id",
+  "merchant_key",
+  "staging",
+  "column_break_4",
+  "user_id",
+  "endpoint"
+ ],
+ "fields": [
+  {
+   "fieldname": "gateway_name",
+   "fieldtype": "Data",
+   "label": "Payment Gateway Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "merchant_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Merchant ID",
+   "mandatory_depends_on": "eval: !doc.staging"
+  },
+  {
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "merchant_key",
+   "fieldtype": "Password",
+   "label": "Merchant Key",
+   "mandatory_depends_on": "eval: !doc.staging"
+  },
+  {
+   "default": "0",
+   "fieldname": "staging",
+   "fieldtype": "Check",
+   "label": "Demo"
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "user_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "User ID",
+   "mandatory_depends_on": "eval: !doc.staging"
+  },
+  {
+   "default": "https://api.waafipay.net/asm",
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "endpoint",
+   "fieldtype": "Data",
+   "label": "Endpoint",
+   "mandatory_depends_on": "eval: !doc.staging"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-07-01 14:49:56.067324",
+ "modified_by": "Administrator",
+ "module": "Payment Gateways",
+ "name": "WaafiPay",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
