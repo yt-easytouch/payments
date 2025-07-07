@@ -45,13 +45,18 @@ class WaafiPay(Document):
             "payerInfo": {"accountNo": account_no},
             "transactionInfo": {
                 "invoiceId": str(invoice_id),
+                "referenceId": str(invoice_id),
                 "amount": f"{float(amount):.2f}",
-                "currency": "USD"
+                "currency": "USD",
+                "description": "Easytouch POS"
             }
         }
+        
         response = self._post(data)
-        self._handle_api_response("invoiceId", data, response)
-        return response
+        req_name = None
+        if response.get("transactionId"):
+            req_name = response["response"]
+        return {"req_name":req_name,"account_no":data ,"response":response}
 
     def cancel_transaction(self, transaction_id, description="Cancel"):
         data = self._build_request("API_CANCELPURCHASE")
@@ -91,16 +96,16 @@ class WaafiPay(Document):
         if error:
             frappe.throw(_(response.get("message", "Transaction Error")), title=_("Transaction Error"))
 
-    def on_update(self):
-        from payments.utils import create_payment_gateway
-        create_payment_gateway(
-            "WaafiPay",
-            settings="WaafiPay",
-            controller="WaafiPay"
-        )
-        call_hook_method("payment_gateway_enabled", gateway="WaafiPay", payment_channel="Phone")
-        frappe.db.commit()
-        create_mode_of_payment("WaafiPay", payment_type="Phone")
+    # def on_update(self):
+    #     from payments.utils import create_payment_gateway
+    #     create_payment_gateway(
+    #         "WaafiPay",
+    #         settings="WaafiPay",
+    #         controller="WaafiPay"
+    #     )
+    #     call_hook_method("payment_gateway_enabled", gateway="WaafiPay", payment_channel="Phone")
+    #     frappe.db.commit()
+    #     create_mode_of_payment("WaafiPay", payment_type="Phone")
 
 
 def create_mode_of_payment(gateway, payment_type="General"):
