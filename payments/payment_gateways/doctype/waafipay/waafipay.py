@@ -53,10 +53,16 @@ class WaafiPay(Document):
         }
         
         response = self._post(data)
-        req_name = None
-        if response.get("transactionId"):
-            req_name = response["response"]
-        return {"req_name":req_name,"account_no":data ,"response":response}
+        transactionId = None
+        response_massage=""
+        status=False
+        if response.get("responseMsg")=="RCS_SUCCESS":
+            status = True
+            transactionId = response["transactionId"]
+        else:
+            response_massage = response['params']['description']
+        
+        return {"status":status, "transactionId":transactionId,"response":response ,"response_massage":response_massage}
 
     def cancel_transaction(self, transaction_id, description="Cancel"):
         data = self._build_request("API_CANCELPURCHASE")
