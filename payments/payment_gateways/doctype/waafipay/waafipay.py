@@ -58,7 +58,7 @@ class WaafiPay(Document):
         status=False
         if response.get("responseMsg")=="RCS_SUCCESS":
             status = True
-            transactionId = response["transactionId"]
+            transactionId = response['params']["transactionId"]
         else:
             response_massage = response['params']['description']
         
