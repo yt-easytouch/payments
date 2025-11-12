@@ -36,6 +36,13 @@ class WaafiPay(Document):
             }
 
     def make_purchase(self, account_no, amount, invoice_id, source="WEB"):
+        if self.staging == 1:
+            return {
+                "status": True,
+                "transactionId": f"DEMO{str(uuid.uuid4())[:6].upper()}",
+                "response": {"responseMsg": "RCS_SUCCESS", "demo": True},
+                "response_massage": "Demo Transaction Successful"
+            }
         data = self._build_request("API_PURCHASE", source)
         data["serviceParams"] = {
             "merchantUid": self.merchant_id,

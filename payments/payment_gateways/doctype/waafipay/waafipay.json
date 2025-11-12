@@ -27,15 +27,13 @@
    "fieldname": "merchant_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Merchant ID",
-   "mandatory_depends_on": "eval: !doc.staging"
+   "label": "Merchant ID"
   },
   {
    "depends_on": "eval: !doc.staging",
    "fieldname": "merchant_key",
    "fieldtype": "Password",
-   "label": "Merchant Key",
-   "mandatory_depends_on": "eval: !doc.staging"
+   "label": "Merchant Key"
   },
   {
    "default": "0",
@@ -52,22 +50,20 @@
    "fieldname": "user_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "User ID",
-   "mandatory_depends_on": "eval: !doc.staging"
+   "label": "User ID"
   },
   {
    "default": "https://api.waafipay.net/asm",
    "depends_on": "eval: !doc.staging",
    "fieldname": "endpoint",
    "fieldtype": "Data",
-   "label": "Endpoint",
-   "mandatory_depends_on": "eval: !doc.staging"
+   "label": "Endpoint"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-07-01 14:49:56.067324",
+ "modified": "2025-09-30 19:04:45.458380",
  "modified_by": "Administrator",
  "module": "Payment Gateways",
  "name": "WaafiPay",
