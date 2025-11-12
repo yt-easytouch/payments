@@ -1,5 +1,3 @@
-# etpos/etpos/waafipay/waafi_pay.py
-
 import frappe
 import uuid
 import time
@@ -23,19 +21,44 @@ class WaafiPay(Document):
         }
 
     def _post(self, payload):
+        """Send POST request and handle errors with logging."""
         try:
             headers = {"Content-Type": "application/json"}
             response = requests.post(self._get_endpoint(), json=payload, headers=headers, timeout=30)
             response.raise_for_status()
-            return response.json()
+            res = response.json()
+
+            # Log successful API call
+            frappe.logger("waafipay").info({
+                "status": "OK",
+                "endpoint": self._get_endpoint(),
+                "payload": payload,
+                "response": res
+            })
+
+            return res
+
         except requests.RequestException as e:
-            return {
+            error_data = {
                 "status": False,
                 "message": str(e),
                 "payload": payload
             }
+            frappe.log_error(
+                title="WaafiPay Request Error",
+                message=frappe.as_json(error_data)
+            )
+            return error_data
+
+        except Exception as e:
+            frappe.log_error(
+                title="WaafiPay Unexpected Error",
+                message=frappe.get_traceback()
+            )
+            return {"status": False, "message": str(e), "payload": payload}
 
     def make_purchase(self, account_no, amount, invoice_id, source="WEB"):
+        """Make payment request to WaafiPay."""
         if self.staging == 1:
             return {
                 "status": True,
@@ -43,6 +66,7 @@ class WaafiPay(Document):
                 "response": {"responseMsg": "RCS_SUCCESS", "demo": True},
                 "response_massage": "Demo Transaction Successful"
             }
+
         data = self._build_request("API_PURCHASE", source)
         data["serviceParams"] = {
             "merchantUid": self.merchant_id,
@@ -58,18 +82,44 @@ class WaafiPay(Document):
                 "description": "Easytouch POS"
             }
         }
-        
+
         response = self._post(data)
+
         transactionId = None
-        response_massage=""
-        status=False
-        if response.get("responseMsg")=="RCS_SUCCESS":
-            status = True
-            transactionId = response['params']["transactionId"]
-        else:
-            response_massage = response['params']['description']
-        
-        return {"status":status, "transactionId":transactionId,"response":response ,"response_massage":response_massage}
+        response_message = ""
+        status = False
+
+        try:
+            if response.get("responseMsg") == "RCS_SUCCESS":
+                status = True
+                transactionId = response["params"]["transactionId"]
+            else:
+                response_message = response.get("params", {}).get("description", "Unknown Error")
+
+        except Exception:
+            frappe.log_error(
+                title="WaafiPay Purchase Response Error",
+                message=frappe.as_json(response)
+            )
+            response_message = "Invalid response from WaafiPay"
+
+        # Log the full transaction
+        frappe.logger("waafipay").info({
+            "endpoint": self._get_endpoint(),
+            "amount": amount,
+            "invoice_id": invoice_id,
+            "status": status,
+            "transactionId": transactionId,
+            "response_message": response_message,
+            "response": response
+        })
+
+        return {
+            "status": status,
+            "transactionId": transactionId,
+            "response": response,
+            "response_massage": response_message
+        }
 
     def cancel_transaction(self, transaction_id, description="Cancel"):
         data = self._build_request("API_CANCELPURCHASE")
@@ -92,7 +142,16 @@ class WaafiPay(Document):
             "apiKey": self.get_password("merchant_key"),
             "referenceId": reference_id
         }
-        return self._post(data)
+        response = self._post(data)
+
+        # Log status check result
+        frappe.logger("waafipay").info({
+            "action": "check_status",
+            "reference_id": reference_id,
+            "response": response
+        })
+
+        return response
 
     def _handle_api_response(self, global_id, request_dict, response):
         if response.get(global_id):
@@ -107,18 +166,11 @@ class WaafiPay(Document):
             create_request_log(request_dict, "Host", "WaafiPay", req_name, error)
 
         if error:
+            frappe.log_error(
+                title="WaafiPay Transaction Error",
+                message=frappe.as_json(error)
+            )
             frappe.throw(_(response.get("message", "Transaction Error")), title=_("Transaction Error"))
-
-    # def on_update(self):
-    #     from payments.utils import create_payment_gateway
-    #     create_payment_gateway(
-    #         "WaafiPay",
-    #         settings="WaafiPay",
-    #         controller="WaafiPay"
-    #     )
-    #     call_hook_method("payment_gateway_enabled", gateway="WaafiPay", payment_channel="Phone")
-    #     frappe.db.commit()
-    #     create_mode_of_payment("WaafiPay", payment_type="Phone")
 
 
 def create_mode_of_payment(gateway, payment_type="General"):
@@ -153,4 +205,19 @@ def create_mode_of_payment(gateway, payment_type="General"):
 @frappe.whitelist()
 def pay_with_waafi(account_no, amount, invoice_id):
     settings = frappe.get_single("WaafiPay")
-    return settings.make_purchase(account_no, amount, invoice_id)
+    try:
+        result = settings.make_purchase(account_no, amount, invoice_id)
+        frappe.logger("waafipay").info({
+            "function": "pay_with_waafi",
+            "account_no": account_no,
+            "amount": amount,
+            "invoice_id": invoice_id,
+            "result": result
+        })
+        return result
+    except Exception:
+        frappe.log_error(
+            title="WaafiPay Payment Failure",
+            message=frappe.get_traceback()
+        )
+        return {"status": False, "message": "Internal Server Error"}
