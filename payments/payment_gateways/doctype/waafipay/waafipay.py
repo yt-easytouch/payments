@@ -62,9 +62,16 @@ class WaafiPay(Document):
         if self.staging == 1:
             return {
                 "status": True,
-                "transactionId": f"DEMO{str(uuid.uuid4())[:6].upper()}",
-                "response": {"responseMsg": "RCS_SUCCESS", "demo": True},
-                "response_massage": "Demo Transaction Successful"
+                "transactionId": "1268666",
+                "response": {
+                    "responseCode": "2001",
+                    "responseMsg": "RCS_SUCCESS",
+                    "params": {
+                        "state": "APPROVED",
+                        "transactionId": "1268666"
+                    }
+                },
+                "response_message": ""
             }
 
         data = self._build_request("API_PURCHASE", source)
