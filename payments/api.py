@@ -89,3 +89,14 @@ def  request_payment(payments=None,sales_invoice=None,data=None):
                         sales_invoice.custom_payment_status = "Paid"
                     payment_request_details = res
     return  {"payment_request_details": payment_request_details, "sales_invoice": sales_invoice}
+
+
+@frappe.whitelist(allow_guest=True)
+def receive_sms():
+    from payments.payments.doctype.sms_inbox.sms_inbox import receive_sms
+    data = frappe.request.get_json()
+    return receive_sms(data)
+    
+        
+    
+  
