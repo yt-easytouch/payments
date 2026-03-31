@@ -63,11 +63,17 @@ def process_payment_gateway(mode_of_payment, amount, invoice_name, phone_number)
     
     return gateway_controller.make_purchase(phone_number, amount, invoice_name)
 
+
+def remove_country_code(phone_number):
+    if phone_number.startswith("+252"):
+        return phone_number[4:]
+    return phone_number
 @frappe.whitelist()
 def  request_payment(payments=None,sales_invoice=None,data=None):
     payment_request_details = None
     if payments:
         payment_number = data.get("payment_number") or data.get("mobile")
+        payment_number = remove_country_code(payment_number)
         for p in payments:
             if p.get("amount") > 0 and payment_number:
                 mode_of_payment = p.get("mode_of_payment")
