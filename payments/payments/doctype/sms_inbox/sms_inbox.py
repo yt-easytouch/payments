@@ -12,7 +12,7 @@ from frappe.utils import nowdate, flt
 import json
 
 class SMSInbox(Document):
-	pass
+    pass
 
 
 @frappe.whitelist(allow_guest=True)
@@ -42,24 +42,38 @@ def insert_sms_inbox(sms_text, sender_number, amount, balance, date_received=Non
 def parse_hormuud_evc_sms(sms_text):
     """
     Parses a Hormuud EVC Plus message and returns a dictionary of data.
+    Handles both old (waxaad heshay) and new (ayaad ka Heshay) formats.
     """
-    amount_match = re.search(r"waxaad \$(\d+(?:\.\d+)?)", sms_text, re.IGNORECASE)
+    # Amount: look for the first dollar amount
+    amount_match = re.search(r"\$(\d+(?:\.\d+)?)", sms_text)
     amount = flt(amount_match.group(1)) if amount_match else 0.0
     
-    sender_match = re.search(r"heshay (\d+)", sms_text)
-    sender_number = sender_match.group(1) if sender_match else ""
+    # Sender Number:
+    # Try old format: "heshay (digits)"
+    sender_match = re.search(r"heshay\s+(\d+)", sms_text, re.IGNORECASE)
+    if sender_match:
+        sender_number = sender_match.group(1)
+    else:
+        # Try new format: Look for long digits (likely phone numbers)
+        # Sample: "Heshay YIKSI LTD  252905112200"
+        all_numbers = re.findall(r"(\d{9,})", sms_text)
+        sender_number = all_numbers[0] if all_numbers else ""
 
-    balance_match = re.search(r"haraagagu waa \$(\d+(?:\.\d+)?)", sms_text, re.IGNORECASE)    
+    # Balance: look for "haraagagu waa $"
+    balance_match = re.search(r"haraaga?gu waa \$(\d+(?:\.\d+)?)", sms_text, re.IGNORECASE)    
     balance = flt(balance_match.group(1)) if balance_match else 0.0
 
-    date_match = re.search(r"Tar: (\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})", sms_text)
+    # Date: Detect format DD/MM/YY or YY/MM/DD
+    date_received = datetime.now()
+    date_match = re.search(r"(\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})", sms_text)
     if date_match:
-        try:
-            date_received = datetime.strptime(date_match.group(1), "%y/%m/%d %H:%M:%S")
-        except Exception:
-            date_received = datetime.now()
-    else:
-        date_received = datetime.now()
+        date_str = date_match.group(1)
+        for fmt in ("%d/%m/%y %H:%M:%S", "%y/%m/%d %H:%M:%S"):
+            try:
+                date_received = datetime.strptime(date_str, fmt)
+                break
+            except ValueError:
+                continue
         
     return {
         "amount": amount,
@@ -69,17 +83,21 @@ def parse_hormuud_evc_sms(sms_text):
     }
 
 
+
 @frappe.whitelist(allow_guest=True)
 def receive_sms():
     data = frappe.request.get_json()
     if not data:
         return {"status": "error", "message": "No data received"}
-    
+
     body = data.get("body", "")
     sender = data.get("from", "") # Gateway sender (e.g., '192')
     
-    # We only care about Hormuud EVC Plus messages from '192' that contain 'waxaad $'
-    if sender == "192" and "waxaad $" in body:
+    # We only care about Hormuud EVC Plus messages from '192'
+    # Checking for identifiers like 'waxaad $', 'ayaad ka Heshay', or 'EVCPlus'
+    is_evc_plus = "waxaad $" in body or "ayaad ka Heshay" in body or "EVCPlus" in body
+    
+    if sender == "192" and is_evc_plus:
         # Parse the message
         parsed_data = parse_hormuud_evc_sms(body)
         
@@ -95,6 +113,7 @@ def receive_sms():
         return {"status": "success", "sms_name": sms_name}
     else:
         return {"status": "ignored", "message": "Message does not match criteria"}
+
 
 
 

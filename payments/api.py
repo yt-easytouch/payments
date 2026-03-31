@@ -1,5 +1,5 @@
 import frappe
-
+import json
 
 @frappe.whitelist()
 def create_payment_from_invoice(sales_invoice,phone_number,mode_of_payment):
@@ -95,7 +95,8 @@ def  request_payment(payments=None,sales_invoice=None,data=None):
 def receive_sms():
     from payments.payments.doctype.sms_inbox.sms_inbox import receive_sms
     data = frappe.request.get_json()
-    return receive_sms(data)
+    frappe.local.request.data = json.dumps(data)
+    return receive_sms()
     
         
     
