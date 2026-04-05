@@ -137,6 +137,7 @@ def make_custom_fields():
 						"options": "Currency",
 						"insert_after": "amount",
 					},
+
 				]
 			}
 		)
@@ -162,6 +163,8 @@ def make_custom_fields():
 
 
 def delete_custom_fields():
+	from payments.install import before_uninstall
+	before_uninstall()
 	if frappe.get_meta("Web Form").has_field("payments_tab"):
 		click.secho("* Uninstalling Payment Custom Fields from Web Form")
 

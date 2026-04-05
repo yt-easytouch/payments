@@ -48,7 +48,7 @@ def create_payment_from_invoice(sales_invoice,phone_number,mode_of_payment):
 def process_payment_gateway(mode_of_payment, amount, invoice_name, phone_number):
     """Process payment through gateway"""
     gateway_account = frappe.get_value(
-        "Mode of Payment", {"name": mode_of_payment}, "custom_payment_gateway_account"
+        "Mode of Payment", {"name": mode_of_payment}, "payment_gateway_account"
     )
     
     if not gateway_account:
@@ -152,7 +152,7 @@ def process_payment(doc, payload):
     for p in payments:
         if p.get("amount") > 0 and payment_number:
             mode_of_payment = p.get("mode_of_payment")
-            gateway_account = frappe.get_value("Mode of Payment", mode_of_payment, "custom_payment_gateway_account")
+            gateway_account = frappe.get_value("Mode of Payment", mode_of_payment, "payment_gateway_account")
             
             if not gateway_account:
                 # No gateway -> Standard Frappe Payment Request (USSD/Manual)

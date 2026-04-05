@@ -65,6 +65,7 @@ app_license = "MIT"
 
 before_install = "payments.utils.before_install"
 after_install = "payments.utils.make_custom_fields"
+after_migrate = "payments.install.before_install"
 
 # Uninstallation
 # ------------
