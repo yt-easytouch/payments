@@ -66,12 +66,17 @@ CUSTOM_FIELDS_JSON = {
             "fieldtype": "Data",
             "description": "Use placeholders to generate dynamic Receiver for USSD:\n{blc} → Invoice Balance",
             "insert_after": "accounts",
+        }, {
+            "fieldname": "is_online_payment",
+            "label": "Is Online Payment",
+            "fieldtype": "Check",
+            "insert_after": "receiver_info",
         },
         {
             "fieldname": "icon",
             "label": "Icon",
             "fieldtype": "Attach Image",
-            "insert_after": "receiver_info"
+            "insert_after": "is_online_payment"
         },
         {
             "fieldname": "payment_gateway_account",
