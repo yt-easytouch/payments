@@ -8,9 +8,19 @@ from frappe.utils import call_hook_method
 from payments.utils import erpnext_app_import_guard
 
 class WaafiPay(Document):
+    
+    supported_currencies = ("USD")
+
     def _get_endpoint(self):
         return "http://sandbox.waafipay.net/asm" if self.staging == 1 else self.endpoint
 
+    def validate_transaction_currency(self, currency):
+		if currency not in self.supported_currencies:
+			frappe.throw(
+				_(
+					"Please select another payment method. Stripe does not support transactions in currency '{0}'"
+				).format(currency)
+			)
     def _build_request(self, service_name, source="WEB"):
         return {
             "schemaVersion": "1.0",
@@ -57,7 +67,7 @@ class WaafiPay(Document):
             )
             return {"status": False, "message": str(e), "payload": payload}
 
-    def make_purchase(self, account_no, amount, invoice_id, source="WEB"):
+    def make_purchase(self, account_no, amount, invoice_id, payment_details=None, provider=None, **kwargs):   
         """Make payment request to WaafiPay."""
         if self.staging == 1:
             return {
@@ -74,7 +84,7 @@ class WaafiPay(Document):
                 "response_message": ""
             }
 
-        data = self._build_request("API_PURCHASE", source)
+        data = self._build_request("API_PURCHASE", "WEB")
         data["serviceParams"] = {
             "merchantUid": self.merchant_id,
             "apiUserId": self.user_id,
