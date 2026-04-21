@@ -15,12 +15,12 @@ class WaafiPay(Document):
         return "http://sandbox.waafipay.net/asm" if self.staging == 1 else self.endpoint
 
     def validate_transaction_currency(self, currency):
-		if currency not in self.supported_currencies:
-			frappe.throw(
-				_(
-					"Please select another payment method. Stripe does not support transactions in currency '{0}'"
-				).format(currency)
-			)
+        if currency not in self.supported_currencies:
+            frappe.throw(
+                _(
+                    "Please select another payment method. Stripe does not support transactions in currency '{0}'"
+                ).format(currency)
+            )
     def _build_request(self, service_name, source="WEB"):
         return {
             "schemaVersion": "1.0",
