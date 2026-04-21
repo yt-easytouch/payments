@@ -67,6 +67,46 @@ class WaafiPay(Document):
             )
             return {"status": False, "message": str(e), "payload": payload}
 
+    def request_for_payment(self, **kwargs):
+        """
+        Entry point for Easytouch Payment Request (Phone channel).
+        Expects kwargs from PaymentRequest.request_phone_payment.
+        """
+        phone_number = kwargs.get("phone_number")
+        amount = kwargs.get("request_amount")
+        currency = kwargs.get("currency") or "USD"
+        reference = kwargs.get("payment_reference") or kwargs.get("reference_docname")
+        reference_doctype = kwargs.get("reference_doctype")
+        reference_docname = kwargs.get("reference_docname")
+        metadata = {
+            "reference": reference,
+            "reference_doctype": reference_doctype,
+            "reference_docname": reference_docname,
+        }
+
+        self.validate_transaction_currency(currency)
+
+        provider = kwargs.get("payment_method")
+        if not provider and reference_doctype == "Payment Request" and reference_docname:
+            try:
+                pr = frappe.get_doc("Payment Request", reference_docname)
+                if pr.message:
+                    provider = json.loads(pr.message or "{}").get("provider")
+            except Exception:
+                provider = None
+
+        # Provider is optional; make_purchase defaults to waafipay
+        return self.make_purchase(
+            account_no=phone_number,
+            amount=amount,
+            invoice_id=reference,
+            reference_doctype=reference_doctype,
+            reference_docname=reference_docname,
+            provider=provider,
+            payment_request=reference_docname,
+            metadata=metadata,
+        )
+
     def make_purchase(self, account_no, amount, invoice_id, payment_details=None, provider=None, **kwargs):   
         """Make payment request to WaafiPay."""
         if self.staging == 1:
