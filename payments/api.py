@@ -3,7 +3,9 @@ import json
 
 @frappe.whitelist()
 def create_payment_from_invoice(sales_invoice,phone_number,mode_of_payment):
-    # try:
+    if not frappe.db.exists("Sales Invoice", sales_invoice):
+        return {"error": f"Sales Invoice {sales_invoice} not found"}
+    
     si = frappe.get_doc("Sales Invoice", sales_invoice)
     if si.outstanding_amount <= 0:
         return {"error": f"Invoice {sales_invoice} has no outstanding amount"}
@@ -66,8 +68,11 @@ def process_payment_gateway(mode_of_payment, amount, invoice_name, phone_number)
 
 
 def remove_country_code(phone_number):
+    phone_number = str(phone_number).strip()
     if phone_number.startswith("+252"):
         return phone_number[4:]
+    if phone_number.startswith("252"):
+        return phone_number[3:]
     return phone_number
 
 def create_payment_entry(doc, amount, mode_of_payment, reference_no, paid_to=None, paid_from=None, remarks=None):
@@ -210,17 +215,15 @@ def process_payment(doc, payload):
                 payment_res = create_payment_from_invoice(doc.name, payment_number, mode_of_payment)                        
                 result["payment_request_details"] = payment_res
             else:
-                # Direct API Gateway Account
+                # Direct synchronous gateway call
                 gateway_res = process_payment_gateway(mode_of_payment, p.get("amount"), doc.name, payment_number)
-                
+
                 if not gateway_res.get("status"):
-                    frappe.delete_doc(doc.doctype, doc.name, ignore_permissions=True)
-                    frappe.db.commit()
                     return {
                         "status": False,
                         "message": gateway_res.get("response_massage") or gateway_res.get("message") or "Payment Failed"
                     }
-                
+
                 if doc.meta.has_field("payments") and getattr(doc, "is_pos", 0):
                     doc.append("payments", {
                         "mode_of_payment": mode_of_payment,
@@ -228,15 +231,15 @@ def process_payment(doc, payload):
                         "payment_reference": gateway_res.get("payment_id") or gateway_res.get("transactionId"),
                         "processed_by": frappe.session.user
                     })
-
+                    doc.save(ignore_permissions=True)
                 else:
-                    payment_entry = create_payment_entry(
+                    create_payment_entry(
                         doc=doc,
                         amount=p.get("amount"),
                         mode_of_payment=mode_of_payment,
                         reference_no=gateway_res.get("payment_id") or gateway_res.get("transactionId")
                     )
-                
+
                 if hasattr(doc, "custom_payment_status"):
                     if doc.docstatus == 0:
                         doc.custom_payment_status = "Paid"
@@ -244,14 +247,10 @@ def process_payment(doc, payload):
                     else:
                         doc.db_set("custom_payment_status", "Paid")
 
-                    
                 result["gateway_responses"].append(gateway_res)
-                
-                # Keep compatibility with old request_payment returning this directly
                 if not result["payment_request_details"]:
                     result["payment_request_details"] = gateway_res
-                
-            
+
     return result
 
 

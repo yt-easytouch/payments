@@ -33,15 +33,15 @@ class WaafiPay(Document):
     def _post(self, payload):
         """Send POST request and handle errors with logging."""
         try:
+            endpoint = self._get_endpoint()
             headers = {"Content-Type": "application/json"}
-            response = requests.post(self._get_endpoint(), json=payload, headers=headers, timeout=30)
+            response = requests.post(endpoint, json=payload, headers=headers)
             response.raise_for_status()
             res = response.json()
 
-            # Log successful API call
             frappe.logger("waafipay").info({
                 "status": "OK",
-                "endpoint": self._get_endpoint(),
+                "endpoint": endpoint,
                 "payload": payload,
                 "response": res
             })
@@ -160,7 +160,6 @@ class WaafiPay(Document):
             )
             response_message = "Invalid response from WaafiPay"
 
-        # Log the full transaction
         frappe.logger("waafipay").info({
             "endpoint": self._get_endpoint(),
             "amount": amount,
