@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestWaafiPay(IntegrationTestCase):
+class IntegrationTestPaymentLogs(IntegrationTestCase):
 	"""
-	Integration tests for WaafiPay.
+	Integration tests for PaymentLogs.
 	Use this class for testing interactions between multiple components.
 	"""
 
