@@ -1,7 +1,43 @@
 import time
 import frappe
 import json
+from contextlib import contextmanager
+
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+
+
+@contextmanager
+def ignore_permissions():
+	"""Run a block with ERPNext's role checks disabled.
+
+	Website/POS users carry no Frappe roles, so ERPNext helpers that resolve
+	accounts on their behalf (e.g. get_payment_entry -> "User don't have
+	permissions to select/read this account.") reject them. Keep the block as
+	tight as possible - it disables permission checks process-wide while open.
+
+	The flag alone is not enough: several helpers call frappe.has_permission
+	with throw=True directly, and core never consults the flag there.
+	DatabaseQuery needs its own arg too - frappe.get_list("Account", ...) reads
+	self.flags.ignore_permissions, never the global one.
+	"""
+	previous = frappe.flags.ignore_permissions
+	original_has_permission = frappe.has_permission
+	original_execute = frappe.model.db_query.DatabaseQuery.execute
+
+	def execute_ignoring_permissions(self, *args, **kwargs):
+		if len(args) < 12:
+			kwargs["ignore_permissions"] = True
+		return original_execute(self, *args, **kwargs)
+
+	frappe.flags.ignore_permissions = True
+	frappe.has_permission = lambda *args, **kwargs: True
+	frappe.model.db_query.DatabaseQuery.execute = execute_ignoring_permissions
+	try:
+		yield
+	finally:
+		frappe.model.db_query.DatabaseQuery.execute = original_execute
+		frappe.has_permission = original_has_permission
+		frappe.flags.ignore_permissions = previous
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,26 +225,29 @@ def create_payment_entry(
             or frappe.get_all("Company", limit=1)[0].name
         )
 
-    pe = get_payment_entry(
-        doc.doctype, doc.name,
-        party_amount=amount,
-        bank_account=paid_to,
-        bank_amount=amount,
-    )
+    # get_payment_entry resolves party/bank accounts and calls frappe.has_permission
+    # with throw=True; doc-level flags don't reach it, so wrap the whole block.
+    with ignore_permissions():
+        pe = get_payment_entry(
+            doc.doctype, doc.name,
+            party_amount=amount,
+            bank_account=paid_to,
+            bank_amount=amount,
+        )
 
-    pe.mode_of_payment = mode_of_payment
-    pe.reference_no    = reference_no
-    pe.reference_date  = frappe.utils.nowdate()
-    pe.posting_date    = frappe.utils.nowdate()
+        pe.mode_of_payment = mode_of_payment
+        pe.reference_no    = reference_no
+        pe.reference_date  = frappe.utils.nowdate()
+        pe.posting_date    = frappe.utils.nowdate()
 
-    if remarks:   pe.remarks    = remarks
-    if paid_from: pe.paid_from  = paid_from
-    if paid_to:   pe.paid_to    = paid_to
+        if remarks:   pe.remarks    = remarks
+        if paid_from: pe.paid_from  = paid_from
+        if paid_to:   pe.paid_to    = paid_to
 
-    pe.set_missing_values()
-    pe.flags.ignore_permissions = True
-    pe.insert(ignore_permissions=True)
-    pe.submit()
+        pe.set_missing_values()
+        pe.flags.ignore_permissions = True
+        pe.insert(ignore_permissions=True)
+        pe.submit()
     frappe.db.commit()
     return pe
 
@@ -239,10 +278,11 @@ def create_payment_request(doc, amount: float, mode_of_payment: str, phone_numbe
         "cost_center":            doc.get("cost_center"),
         "status":                 "Draft",
     })
-    pr.insert(ignore_permissions=True)
-    frappe.db.commit()
-    pr.flags.ignore_permissions = True
-    pr.submit()
+    with ignore_permissions():
+        pr.insert(ignore_permissions=True)
+        frappe.db.commit()
+        pr.flags.ignore_permissions = True
+        pr.submit()
 
     return {
         "success":      True,
@@ -425,7 +465,8 @@ def process_payment(doc, payload):
                 })
                 doc.save(ignore_permissions=True)
             else:
-                doc.submit()
+                with ignore_permissions():
+                    doc.submit()
                 create_payment_entry(
                     doc=doc,
                     amount=amount,
