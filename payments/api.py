@@ -166,16 +166,12 @@ def _cancel_or_delete_invoice(invoice_name: str, reason: str):
             # Still a draft — just delete it
             si.delete()
             frappe.db.commit()
-            frappe.logger().info(
-                f"[Payment] Deleted draft invoice {invoice_name}: {reason}"
-            )
+           
         elif si.docstatus == 1:
             # Submitted but unpaid — cancel it
             si.cancel()
             frappe.db.commit()
-            frappe.logger().info(
-                f"[Payment] Cancelled submitted invoice {invoice_name}: {reason}"
-            )
+           
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Failed to cancel/delete invoice {invoice_name}")
@@ -200,6 +196,114 @@ def _mark_invoice_retry_pending(invoice_name: str, reason: str):
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Failed to mark retry pending for {invoice_name}")
+
+
+def _create_hold_order_from_invoice(doc, mode_of_payment=None) -> str | None:
+    """
+    Snapshot a draft Sales Invoice into an etpos Hold Order so the cart can be
+    resumed from the POS UI later. Mirrors etpos' create_hold_order mapping:
+    the full invoice dict goes into hold.data, metadata lands on columns the
+    Hold Orders list filters on. Returns the Hold Order name, or None when
+    etpos is not installed.
+    """
+    if not frappe.db.exists("DocType", "Hold Order"):
+        return None
+
+    inv_data = doc.as_dict()
+    inv_data.update({
+        "source":               doc.get("custom_source"),
+        "salesperson":          doc.get("ytpos_salesperson") or frappe.session.user,
+        "pos_opening_shift":    doc.get("posa_pos_opening_shift"),
+        "table":                doc.get("custom_table"),
+        "order_type":           doc.get("custom_order_type"),
+        "notification_type":    doc.get("custom_notification_type"),
+        "notification_status":  doc.get("custom_notification_status"),
+        "total_items_amount":   doc.get("total"),
+        "invoice_status":       "Draft",
+        "is_from_ui":           0,
+    })
+
+    with ignore_permissions():
+        hold = frappe.new_doc("Hold Order")
+        hold.data                 = frappe.as_json(inv_data)
+        hold.pos_profile          = doc.get("pos_profile")
+        hold.user                 = inv_data["salesperson"]
+        hold.queue_number         = doc.get("custom_order_number")
+        hold.source               = inv_data["source"]
+        hold.pos_shift            = inv_data["pos_opening_shift"]
+        hold.table                = inv_data["table"]
+        hold.invoice_status       = inv_data["invoice_status"]
+        hold.is_from_ui           = 0
+        hold.order_type           = inv_data["order_type"]
+        hold.notification_type    = inv_data["notification_type"]
+        hold.notification_status  = inv_data["notification_status"]
+        hold.total_items_amount   = inv_data["total_items_amount"]
+        hold.note                 = doc.get("referenceNote")
+        hold.currency             = doc.get("currency")
+        # Keep the customer's chosen payment method visible to the cashier even
+        # when nothing was charged yet (0-amount rows are dropped from SI).
+        hold.mode_of_payment      = (
+            mode_of_payment
+            or next(
+                (
+                    p.get("mode_of_payment")
+                    for p in (doc.get("payments") or [])
+                    if p.get("mode_of_payment")
+                ),
+                None,
+            )
+        )
+        hold.insert(ignore_permissions=True)
+    return hold.name
+
+
+def _repoint_references(old_name: str, new_doctype: str, new_name: str):
+    """Move Payment Logs / Payment Request references onto another document."""
+    frappe.db.sql(
+        """UPDATE `tabPayment Logs`
+           SET reference_document = %s
+           WHERE reference_document = %s""",
+        (new_name, old_name),
+    )
+    frappe.db.sql(
+        """UPDATE `tabPayment Request`
+           SET reference_doctype = %s, reference_name = %s
+           WHERE reference_doctype = 'Sales Invoice' AND reference_name = %s""",
+        (new_doctype, new_name, old_name),
+    )
+
+
+def _hold_order_and_delete_invoice(doc, reason: str, mode_of_payment=None) -> str | None:
+    """
+    Non-POS checkout path (APP / WEB / KIOSK paying cash or another plain
+    mode): park the cart as a Hold Order for cashier follow-up and remove
+    the auto-created draft Sales Invoice. When staff later complete the held
+    order, etpos repoints these references back onto the new invoice and
+    deletes the hold. Never raises — payment flow must continue cleanly.
+    """
+    try:
+        hold_name = _create_hold_order_from_invoice(doc, mode_of_payment=mode_of_payment)
+        if not hold_name:
+            return None
+
+        _repoint_references(doc.name, "Hold Order", hold_name)
+
+        si = frappe.get_doc("Sales Invoice", doc.name)
+        si.flags.ignore_permissions = True
+        if si.docstatus == 1:
+            si.cancel()
+        si.delete()
+        frappe.db.commit()
+
+        return hold_name
+
+    except Exception:
+        frappe.db.rollback()
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"Failed to hold/delete invoice {doc.name}",
+        )
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -455,6 +559,26 @@ def process_payment(doc, payload):
             result["payment_requests"].append(pr_res)
             continue
         if not is_online_payment and not has_gateway:
+            # ── Non-POS sources (APP / WEB / KIOSK): don't settle the sale.
+            # Park it as a Hold Order for cashier follow-up and delete the
+            # draft invoice — staff resumes and completes it from the POS.
+            if doc.doctype == "Sales Invoice" and doc.get("custom_source") != "POS":
+                hold_name = _hold_order_and_delete_invoice(
+                    doc, f"Non-gateway payment via {mop} for non-POS source",
+                    mode_of_payment=mop,
+                )
+                return {
+                    "status":     True,
+                    "held":       True,
+                    "hold_order": hold_name,
+                    "message":    (
+                        f"Order parked as Hold Order {hold_name}; "
+                        f"invoice {doc.name} deleted."
+                        if hold_name
+                        else "Hold Order unavailable; invoice left untouched."
+                    ),
+                }
+
             txn_ref = f"PAYMENT-{doc.name}"
             if doc.meta.has_field("payments") and getattr(doc, "is_pos", 0):
                 doc.append("payments", {
