@@ -10,6 +10,7 @@
  "field_order": [
   "reference_document",
   "fault_type",
+  "status",
   "column_break_ffl1",
   "timestamp",
   "user",
@@ -34,6 +35,15 @@
    "in_standard_filter": 1,
    "label": "Fault Type",
    "options": "customer\nsystem"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nActive\nFailed"
   },
   {
    "fieldname": "column_break_ffl1",

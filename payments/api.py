@@ -129,6 +129,7 @@ def _log_failure(doc_name: str, reason: str, payload: dict = None, fault_type: s
             "reference_document": doc_name,
             "reason":             reason,
             "fault_type":         fault_type,
+            "status":             "Failed",
             "payload":            json.dumps(payload or {}),
             "timestamp":          frappe.utils.now(),
             "user":               frappe.session.user,
@@ -136,6 +137,29 @@ def _log_failure(doc_name: str, reason: str, payload: dict = None, fault_type: s
         frappe.db.commit()
     except Exception:
         frappe.log_error(frappe.get_traceback(), "PaymentFailureLog insert failed")
+
+
+def _log_success(doc_name: str, payload: dict = None, reason: str = "Payment successful"):
+    """
+    Write a success entry to the Payment Logs doctype.
+    Never raises — logging must not crash the payment flow.
+    """
+    try:
+        doc = frappe.get_doc({
+            "doctype":            "Payment Logs",
+            "reference_document": doc_name,
+            "reason":             reason,
+            "fault_type":         "system",
+            "status":             "Active",
+            "payload":            json.dumps(payload or {}),
+            "timestamp":          frappe.utils.now(),
+            "user":               frappe.session.user,
+        })
+        doc.insert(ignore_permissions=True)
+        frappe.db.set_value("Payment Logs", doc.name, "docstatus", 1)
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "PaymentSuccessLog insert failed")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -521,6 +545,7 @@ def process_payment(doc, payload):
                 paid_from=debtors,
                 remarks=f"Wallet payment for {doc.name}",
             )
+            _log_success(doc.name, payload, f"Wallet payment of {wallet_amount} successful")
         except Exception:
             # Wallet failure is non-fatal — log and continue
             frappe.log_error(frappe.get_traceback(), "Wallet Payment Error")
@@ -605,7 +630,8 @@ def process_payment(doc, payload):
                     doc.save(ignore_permissions=True)
                 else:
                     doc.db_set("custom_payment_status", "Paid")
-            
+
+            _log_success(doc.name, payload, f"Manual payment of {amount} via {mop} successful")
             continue
         # ── Direct gateway charge ─────────────────────────────────────────────
         if not phone:
@@ -681,6 +707,7 @@ def process_payment(doc, payload):
             else:
                 doc.db_set("custom_payment_status", "Paid")
 
+        _log_success(doc.name, payload, f"Gateway payment of {amount} via {mop} successful (ref: {txn_ref})")
         result["gateway_responses"].append(gw_res)
 
     return result
