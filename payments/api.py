@@ -118,7 +118,24 @@ def classify_failure(gateway_res: dict) -> str:
 #  Logging
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _log_failure(doc_name: str, reason: str, payload: dict = None, fault_type: str = "customer"):
+def _build_log_payload(payload: dict = None, gateway_response: dict = None) -> str:
+    """Serialize the request payload together with the raw gateway response."""
+    data = {"request": payload or {}}
+    if gateway_response is not None:
+        data["gateway_response"] = gateway_response
+    try:
+        return json.dumps(data, indent=2, default=str)
+    except Exception:
+        return json.dumps({"request": str(payload), "gateway_response": str(gateway_response)})
+
+
+def _log_failure(
+    doc_name: str,
+    reason: str,
+    payload: dict = None,
+    fault_type: str = "customer",
+    gateway_response: dict = None,
+):
     """
     Write a structured entry to the Payment Logs doctype.
     Never raises — logging must not crash the payment flow.
@@ -130,7 +147,7 @@ def _log_failure(doc_name: str, reason: str, payload: dict = None, fault_type: s
             "reason":             reason,
             "fault_type":         fault_type,
             "status":             "Failed",
-            "payload":            json.dumps(payload or {}),
+            "payload":            _build_log_payload(payload, gateway_response),
             "timestamp":          frappe.utils.now(),
             "user":               frappe.session.user,
         }).insert(ignore_permissions=True)
@@ -139,7 +156,12 @@ def _log_failure(doc_name: str, reason: str, payload: dict = None, fault_type: s
         frappe.log_error(frappe.get_traceback(), "PaymentFailureLog insert failed")
 
 
-def _log_success(doc_name: str, payload: dict = None, reason: str = "Payment successful"):
+def _log_success(
+    doc_name: str,
+    payload: dict = None,
+    reason: str = "Payment successful",
+    gateway_response: dict = None,
+):
     """
     Write a success entry to the Payment Logs doctype.
     Never raises — logging must not crash the payment flow.
@@ -151,7 +173,7 @@ def _log_success(doc_name: str, payload: dict = None, reason: str = "Payment suc
             "reason":             reason,
             "fault_type":         "system",
             "status":             "Active",
-            "payload":            json.dumps(payload or {}),
+            "payload":            _build_log_payload(payload, gateway_response),
             "timestamp":          frappe.utils.now(),
             "user":               frappe.session.user,
         })
@@ -657,10 +679,11 @@ def process_payment(doc, payload):
             reason     = (
                 gw_res.get("response_massage") or
                 gw_res.get("message") or
+                json.dumps(gw_res.get("response") or {}, default=str) or
                 "Payment failed"
             )
 
-            _log_failure(doc.name, reason, payload, fault_type)
+            _log_failure(doc.name, reason, payload, fault_type, gateway_response=gw_res)
 
             if doc.doctype == "Sales Invoice":
                 if fault_type == "customer":
@@ -707,7 +730,12 @@ def process_payment(doc, payload):
             else:
                 doc.db_set("custom_payment_status", "Paid")
 
-        _log_success(doc.name, payload, f"Gateway payment of {amount} via {mop} successful (ref: {txn_ref})")
+        _log_success(
+            doc.name,
+            payload,
+            f"Gateway payment of {amount} via {mop} successful (ref: {txn_ref})",
+            gateway_response=gw_res,
+        )
         result["gateway_responses"].append(gw_res)
 
     return result

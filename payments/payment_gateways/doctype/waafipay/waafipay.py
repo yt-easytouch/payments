@@ -1,4 +1,5 @@
 import frappe
+import json
 import uuid
 import time
 import requests
@@ -107,7 +108,27 @@ class WaafiPay(Document):
             metadata=metadata,
         )
 
-    def make_purchase(self, account_no, amount, invoice_id, payment_details=None, provider=None, **kwargs):   
+    @staticmethod
+    def _extract_error_message(response):
+        """Best available human message, falling back to the whole payload."""
+        if not isinstance(response, dict):
+            return str(response)
+
+        params = response.get("params") or {}
+        for value in (
+            params.get("description"),
+            params.get("responseMsg"),
+            response.get("errorMessage"),
+            response.get("message"),
+            response.get("responseMsg"),
+        ):
+            if value:
+                code = response.get("errorCode") or response.get("responseCode")
+                return f"[{code}] {value}" if code else str(value)
+
+        return frappe.as_json(response)
+
+    def make_purchase(self, account_no, amount, invoice_id, payment_details=None, provider=None, **kwargs):
         """Make payment request to WaafiPay."""
         if self.staging == 1:
             return {
@@ -151,14 +172,14 @@ class WaafiPay(Document):
                 status = True
                 transactionId = response["params"]["transactionId"]
             else:
-                response_message = response.get("params", {}).get("description", "Unknown Error")
+                response_message = self._extract_error_message(response)
 
         except Exception:
             frappe.log_error(
                 title="WaafiPay Purchase Response Error",
                 message=frappe.as_json(response)
             )
-            response_message = "Invalid response from WaafiPay"
+            response_message = f"Invalid response from WaafiPay: {frappe.as_json(response)}"
 
         frappe.logger("waafipay").info({
             "endpoint": self._get_endpoint(),
@@ -170,10 +191,14 @@ class WaafiPay(Document):
             "response": response
         })
 
+        safe_request = frappe.parse_json(frappe.as_json(data))
+        safe_request["serviceParams"]["apiKey"] = "***"
+
         return {
             "status": status,
             "transactionId": transactionId,
             "response": response,
+            "request": safe_request,
             "response_massage": response_message
         }
 
