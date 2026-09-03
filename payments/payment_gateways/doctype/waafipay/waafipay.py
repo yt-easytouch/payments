@@ -36,7 +36,8 @@ class WaafiPay(Document):
         try:
             endpoint = self._get_endpoint()
             headers = {"Content-Type": "application/json"}
-            response = requests.post(endpoint, json=payload, headers=headers)
+            # (connect, read): without a timeout a stalled WaafiPay pins the web worker forever
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=(5, 60))
             response.raise_for_status()
             res = response.json()
 

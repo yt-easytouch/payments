@@ -1,4 +1,3 @@
-import time
 import frappe
 import json
 from contextlib import contextmanager
@@ -451,77 +450,43 @@ def call_payment_gateway(
     doc_name: str,
     phone_number: str,
 ) -> dict:
-    """Single raw gateway call. Returns the gateway's response dict."""
+    """
+    Single gateway call — one attempt, no retry, no sleep.
+
+    A purchase is not idempotent: retrying a read timeout can charge the
+    customer twice. Adds '_fault_type' ('customer' | 'system' | None) so the
+    caller knows how to handle failure.
+    """
     gateway_account = frappe.get_value(
         "Mode of Payment", mode_of_payment, "payment_gateway_account"
     )
     if not gateway_account:
-        return {"status": False, "message": "Payment gateway not configured"}
+        return {
+            "status": False,
+            "message": "Payment gateway not configured",
+            "_fault_type": "system",
+        }
 
     payment_gateway = frappe.get_value(
         "Payment Gateway Account", gateway_account, "payment_gateway"
     )
-    gw   = frappe.get_doc("Payment Gateway", payment_gateway)
-    ctrl = frappe.get_doc(gw.gateway_settings, gw.gateway_controller)
-    return ctrl.make_purchase(phone_number, amount, doc_name)
 
+    try:
+        gw   = frappe.get_doc("Payment Gateway", payment_gateway)
+        ctrl = frappe.get_doc(gw.gateway_settings, gw.gateway_controller)
+        res  = ctrl.make_purchase(phone_number, amount, doc_name)
+    except Exception as exc:
+        res = {"status": False, "message": str(exc)}
 
-def call_payment_gateway_with_retry(
-    mode_of_payment: str,
-    amount: float,
-    doc_name: str,
-    phone_number: str,
-    max_retries: int = 3,
-    delay_seconds: float = 2.0,
-) -> dict:
-    """
-    Call the gateway up to max_retries times, but only retry on system faults.
+    if res.get("status"):
+        res["_fault_type"] = None
+        return res
 
-    Customer faults (wrong PIN, insufficient funds, etc.) return immediately —
-    retrying would just annoy the customer and waste gateway credits.
-
-    Adds a '_fault_type' key ('customer' | 'system' | None) to the response
-    so the caller knows how to handle failure.
-    """
-    last_res = {"status": False, "message": "No attempts made", "_fault_type": "system"}
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            res = call_payment_gateway(mode_of_payment, amount, doc_name, phone_number)
-        except Exception as exc:
-            # Any Python exception (network, import error, etc.) = system fault
-            res = {"status": False, "message": f"Exception on attempt {attempt}: {str(exc)}"}
-
-        if res.get("status"):
-            res["_fault_type"] = None          # success — no fault
-            return res
-
-        fault_type = classify_failure(res)
-        res["_fault_type"] = fault_type
-        last_res = res
-
-        if fault_type == "customer":
-            # No point retrying — the customer needs to act
-            frappe.logger().info(
-                f"[Payment] Customer fault on attempt {attempt} for {doc_name}: "
-                f"{res.get('message')}"
-            )
-            return res
-
-        # System fault — log and wait before next attempt
-        frappe.logger().warning(
-            f"[Payment] System fault on attempt {attempt}/{max_retries} "
-            f"for {doc_name}: {res.get('message')}"
-        )
-        if attempt < max_retries:
-            time.sleep(delay_seconds)
-
-    # All retries exhausted on system fault
-    frappe.logger().error(
-        f"[Payment] All {max_retries} retries exhausted for {doc_name}. "
-        f"Last error: {last_res.get('message')}"
+    res["_fault_type"] = classify_failure(res)
+    frappe.logger().warning(
+        f"[Payment] {res['_fault_type']} fault for {doc_name}: {res.get('message')}"
     )
-    return last_res
+    return res
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -664,13 +629,11 @@ def process_payment(doc, payload):
                 "message":    "Phone number is required for gateway payment.",
             }
 
-        gw_res = call_payment_gateway_with_retry(
+        gw_res = call_payment_gateway(
             mode_of_payment=mop,
             amount=amount,
             doc_name=doc.name,
             phone_number=phone,
-            max_retries=3,
-            delay_seconds=2.0,
         )
 
         # ── Gateway failed ────────────────────────────────────────────────────
@@ -690,14 +653,13 @@ def process_payment(doc, payload):
                     # Wrong PIN / low balance etc. — remove the invoice
                     _cancel_or_delete_invoice(doc.name, reason)
                 else:
-                    # System fault, all retries done — keep invoice, flag it
+                    # System fault — keep invoice, flag it for follow-up
                     _mark_invoice_retry_pending(doc.name, reason)
 
             return {
                 "status":     False,
                 "fault_type": fault_type,
                 "message":    reason,
-                "retried":    fault_type == "system",
             }
 
         # ── Gateway succeeded ─────────────────────────────────────────────────
