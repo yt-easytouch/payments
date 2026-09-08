@@ -9,7 +9,7 @@ from frappe.utils import call_hook_method
 from payments.utils import erpnext_app_import_guard
 
 class WaafiPay(Document):
-    
+
     supported_currencies = ("USD")
 
     def _get_endpoint(self):
@@ -37,7 +37,7 @@ class WaafiPay(Document):
             endpoint = self._get_endpoint()
             headers = {"Content-Type": "application/json"}
             # (connect, read): without a timeout a stalled WaafiPay pins the web worker forever
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=(5, 60))
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=(5, 30))
             response.raise_for_status()
             res = response.json()
 
