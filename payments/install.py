@@ -9,6 +9,11 @@ def create_custom_fields_from_json(custom_fields_map):
     Supports multiple doctypes, multiple fields.
     """
     for doctype, fields in custom_fields_map.items():
+        # Skip if the target DocType does not exist (e.g. Mode of Payment
+        # when ERPNext is not installed) — fields can't be created anyway.
+        if not frappe.db.exists("DocType", doctype):
+            continue
+
         for field in fields:
             fieldname = field.get("fieldname")
 
