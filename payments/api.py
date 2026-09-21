@@ -2,6 +2,9 @@ import frappe
 import json
 from contextlib import contextmanager
 
+from frappe import _
+from frappe.utils import flt
+
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 
 
@@ -493,6 +496,69 @@ def call_payment_gateway(
 #  Main entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
+def allocate_wallet_advances(doc, amount):
+    """Pay `amount` of `doc` from the customer's wallet. Returns what it covered.
+
+    The wallet is not a Mode of Payment — the balance a customer sees *is*
+    their unallocated advance Payment Entries (etpos' get_user_profile reads it
+    from get_partywise_advanced_payment_amount). So spending it means
+    allocating those existing entries against this invoice, exactly as
+    ERPNext's own "Get Advances Received" does.
+
+    This used to create a fresh Payment Entry under a hardcoded "Wallet" Mode
+    of Payment instead. On a bench with no such Mode of Payment that threw and
+    was swallowed as non-fatal, so checkout answered "Payment successful" over
+    an invoice still fully outstanding — and where the Mode of Payment did
+    exist it invented money rather than consuming the advance, double-counting
+    the balance.
+    """
+    remaining = flt(amount)
+    if remaining <= 0:
+        return 0
+
+    # Rows already on the invoice must not be allocated twice.
+    seen = {(row.reference_type, row.reference_name) for row in doc.get("advances", [])}
+    allocated_total = 0
+
+    for entry in doc.get_advance_entries(include_unallocated=True):
+        if remaining <= 0.005:
+            break
+        if (entry.reference_type, entry.reference_name) in seen:
+            continue
+
+        allocate = min(flt(entry.amount), remaining)
+        if allocate <= 0:
+            continue
+
+        row = {
+            "doctype": doc.doctype + " Advance",
+            "reference_type": entry.reference_type,
+            "reference_name": entry.reference_name,
+            "reference_row": entry.reference_row,
+            "remarks": entry.remarks,
+            "advance_amount": flt(entry.amount),
+            "allocated_amount": allocate,
+            "ref_exchange_rate": flt(entry.exchange_rate) or 1,
+            "difference_posting_date": doc.posting_date,
+        }
+        if entry.get("paid_from"):
+            row["account"] = entry.paid_from
+        if entry.get("paid_to"):
+            row["account"] = entry.paid_to
+
+        doc.append("advances", row)
+        remaining -= allocate
+        allocated_total += allocate
+
+    if allocated_total > 0:
+        # Recalculate so total_advance and outstanding_amount reflect the new
+        # rows; appending to the table alone leaves the invoice reading as unpaid.
+        doc.calculate_taxes_and_totals()
+        doc.save(ignore_permissions=True)
+
+    return allocated_total
+
+
 @frappe.whitelist()
 def process_payment(doc, payload):
     # ── Load document ──────────────────────────────────────────────────────────
@@ -516,26 +582,24 @@ def process_payment(doc, payload):
 
     # ── 1. Wallet payment ──────────────────────────────────────────────────────
     if wallet_amount > 0:
-        company        = doc.company
-        wallet_account = (
-            _get_company_account(company, "Customer Wallet")
-            or frappe.get_value("Company", company, "default_cash_account")
-        )
-        debtors = frappe.get_value("Company", company, "default_receivable_account")
         try:
-            create_payment_entry(
-                doc=doc,
-                amount=wallet_amount,
-                mode_of_payment="Wallet",
-                reference_no=f"WALLET-{doc.name}",
-                paid_to=wallet_account,
-                paid_from=debtors,
-                remarks=f"Wallet payment for {doc.name}",
-            )
-            _log_success(doc.name, payload, f"Wallet payment of {wallet_amount} successful")
+            allocated = allocate_wallet_advances(doc, wallet_amount)
         except Exception:
-            # Wallet failure is non-fatal — log and continue
             frappe.log_error(frappe.get_traceback(), "Wallet Payment Error")
+            allocated = 0
+
+        # A wallet payment that silently does nothing is worse than a refused
+        # one: the caller reports "Payment successful" over an invoice that is
+        # still fully outstanding. Fail loudly instead.
+        if allocated + 0.005 < wallet_amount:
+            _log_failure(doc.name, f"Wallet could only cover {allocated} of {wallet_amount}", payload, "customer")
+            return {
+                "status":     False,
+                "fault_type": "customer",
+                "message":    _("Your wallet balance could not cover this order."),
+            }
+
+        _log_success(doc.name, payload, f"Wallet payment of {wallet_amount} successful")
 
     # ── 2. Loyalty points ──────────────────────────────────────────────────────
     if loyalty_points > 0:
