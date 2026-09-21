@@ -34,6 +34,10 @@ class WaafiPay2(Document):
         self.create_mode_of_payment("WaafiPay2-" + self.gateway_name)
 
     def create_mode_of_payment(self, gateway, payment_type="General"):
+        # ERPNext Mode of Payment glue is skipped when ERPNext is not installed.
+        if "erpnext" not in frappe.get_installed_apps():
+            return None
+
         if not frappe.db.exists("Mode of Payment", gateway):
             with erpnext_app_import_guard():
                 from erpnext import get_default_company
