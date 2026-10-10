@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-01 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "sandbox",
+  "api_section",
+  "merchant_uid",
+  "api_user_id",
+  "api_key",
+  "hpp_section",
+  "store_id",
+  "hpp_key"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "New WaafiPay payments are refused while this is off.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "1",
+   "description": "Use the WaafiPay sandbox. Turn off only with live credentials.",
+   "fieldname": "sandbox",
+   "fieldtype": "Check",
+   "label": "Sandbox"
+  },
+  {
+   "fieldname": "api_section",
+   "fieldtype": "Section Break",
+   "label": "Merchant API"
+  },
+  {
+   "description": "Merchant UID from the WaafiPay merchant portal, e.g. M0000000.",
+   "fieldname": "merchant_uid",
+   "fieldtype": "Data",
+   "label": "Merchant UID"
+  },
+  {
+   "fieldname": "api_user_id",
+   "fieldtype": "Data",
+   "label": "API User ID"
+  },
+  {
+   "description": "Stored encrypted.",
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "API Key"
+  },
+  {
+   "description": "Needed for card payments on the hosted payment page.",
+   "fieldname": "hpp_section",
+   "fieldtype": "Section Break",
+   "label": "Hosted payment page (cards)"
+  },
+  {
+   "fieldname": "store_id",
+   "fieldtype": "Data",
+   "label": "Store ID"
+  },
+  {
+   "description": "Stored encrypted.",
+   "fieldname": "hpp_key",
+   "fieldtype": "Password",
+   "label": "HPP Key"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-01 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Payments",
+ "name": "WaafiPay Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

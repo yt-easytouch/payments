@@ -116,7 +116,15 @@ scheduler_events = {
 	"all": [
 		"payments.payment_gateways.doctype.razorpay_settings.razorpay_settings.capture_payment",
 	],
+	"cron": {
+		"*/5 * * * *": [
+			"payments.waafipay_checkout.api.reconcile",
+		],
+	},
 }
+
+# WaafiPay checkout: other apps register a handler per reference DocType
+# payment_handlers = {"Sales Order": "my_app.payments.on_transaction_update"}
 
 # Testing
 # -------

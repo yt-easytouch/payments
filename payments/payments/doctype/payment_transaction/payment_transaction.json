@@ -1,0 +1,254 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-01 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "gateway",
+  "method",
+  "amount_cents",
+  "currency",
+  "status",
+  "needs_review",
+  "review_note",
+  "column_break_main",
+  "reference_doctype",
+  "reference_name",
+  "reference_id",
+  "provider_ref",
+  "provider_token",
+  "payer_section",
+  "payer_phone_masked",
+  "payer_phone",
+  "description",
+  "column_break_payer",
+  "return_path",
+  "redirect_url",
+  "outcome_section",
+  "paid_at",
+  "closed_at",
+  "rechecked_at",
+  "column_break_outcome",
+  "failure_reason",
+  "raw_response"
+ ],
+ "fields": [
+  {
+   "fieldname": "gateway",
+   "fieldtype": "Data",
+   "label": "Gateway",
+   "default": "waafipay",
+   "in_standard_filter": 1,
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "method",
+   "fieldtype": "Select",
+   "label": "Method",
+   "options": "evc_plus\nzaad\nsahal\ncard",
+   "in_list_view": 1,
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "amount_cents",
+   "fieldtype": "Int",
+   "label": "Amount (cents)",
+   "in_list_view": 1,
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency",
+   "default": "USD",
+   "length": 3,
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "pending\nprocessing\npaid\nfailed\nexpired\ncancelled",
+   "default": "pending",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "needs_review",
+   "fieldtype": "Check",
+   "label": "Needs Review",
+   "default": "0",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_note",
+   "fieldtype": "Small Text",
+   "label": "Review Note",
+   "depends_on": "needs_review",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Reference DocType",
+   "options": "DocType",
+   "reqd": 1,
+   "set_only_once": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Reference Name",
+   "options": "reference_doctype",
+   "reqd": 1,
+   "set_only_once": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_id",
+   "fieldtype": "Data",
+   "label": "Reference ID",
+   "description": "Our id sent to the gateway as referenceId.",
+   "reqd": 1,
+   "set_only_once": 1,
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "provider_ref",
+   "fieldtype": "Data",
+   "label": "Provider Reference",
+   "description": "The gateway's transactionId.",
+   "unique": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "provider_token",
+   "fieldtype": "Data",
+   "label": "Provider Session",
+   "description": "referenceId the gateway returned for the hosted payment page, when it differs from ours.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payer_section",
+   "fieldtype": "Section Break",
+   "label": "Payer"
+  },
+  {
+   "fieldname": "payer_phone_masked",
+   "fieldtype": "Data",
+   "label": "Payer Phone",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payer_phone",
+   "fieldtype": "Password",
+   "label": "Payer Phone (full)",
+   "description": "Kept encrypted only while the payment is open.",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_payer",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "return_path",
+   "fieldtype": "Small Text",
+   "label": "Return Path",
+   "description": "Same-site path the browser is sent to after the hosted payment page.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "redirect_url",
+   "fieldtype": "Small Text",
+   "label": "Hosted Payment Page URL",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "outcome_section",
+   "fieldtype": "Section Break",
+   "label": "Outcome"
+  },
+  {
+   "fieldname": "paid_at",
+   "fieldtype": "Datetime",
+   "label": "Paid At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "closed_at",
+   "fieldtype": "Datetime",
+   "label": "Closed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rechecked_at",
+   "fieldtype": "Datetime",
+   "label": "Rechecked At",
+   "description": "When an expired card payment was looked up once more for a late approval.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_outcome",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "raw_response",
+   "fieldtype": "JSON",
+   "label": "Gateway Response",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-01 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Payments",
+ "name": "Payment Transaction",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "permlevel": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "reference_name",
+ "track_changes": 1
+}
