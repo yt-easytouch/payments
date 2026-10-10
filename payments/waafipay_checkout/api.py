@@ -4,7 +4,7 @@ Callers register `payment_handlers = {"<Reference DocType>": "dotted.path"}` in 
 called as handler(transaction, event) inside the same DB transaction whenever a transaction changes status,
 gets flagged for review, or receives a late approval.
 
-Lock order: the Payment Transaction row is locked first, handlers take their own locks after it. Callers must
+Lock order: the WaafiPay Transaction row is locked first, handlers take their own locks after it. Callers must
 never hold their own row locks while calling start/verify/expire_stale, so no path locks in the other order.
 """
 
@@ -21,7 +21,7 @@ from frappe.utils.password import get_decrypted_password, remove_encrypted_passw
 from payments.waafipay_checkout import client
 from payments.waafipay_checkout.client import GatewayError
 
-DOCTYPE = "Payment Transaction"
+DOCTYPE = "WaafiPay Transaction"
 SETTINGS = "WaafiPay Settings"
 GATEWAY = "waafipay"
 CURRENCY = "USD"
@@ -196,7 +196,7 @@ def start(
 	description: str = "",
 	base_url: str | None = None,
 ) -> frappe._dict:
-	"""Creates a Payment Transaction and sends it to WaafiPay; raises PaymentError (with .transaction once one exists).
+	"""Creates a WaafiPay Transaction and sends it to WaafiPay; raises PaymentError (with .transaction once one exists).
 
 	Wallets are charged by a background job. Cards commit the open transaction, then open the hosted page;
 	the browser comes back through RETURN_ENDPOINT on base_url (default get_url()) and is sent to return_path.
@@ -595,4 +595,4 @@ def reconcile(limit: int = 100):
 				job(name)
 				_commit()
 			except Exception:
-				frappe.log_error(title=f"Payment Transaction {name} could not be reconciled")
+				frappe.log_error(title=f"WaafiPay Transaction {name} could not be reconciled")

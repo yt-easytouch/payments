@@ -1,0 +1,4 @@
+[pre_model_sync]
+payments.patches.v16_0.rename_payment_transaction_to_waafipay_transaction
+
+[post_model_sync]
