@@ -1,3 +1,4 @@
+from dataclasses import replace
 from unittest.mock import patch
 
 import frappe
@@ -21,6 +22,28 @@ def approved(reference, amount="12.50", transaction="T-1"):
 
 
 NOT_FOUND = {"responseCode": "5310", "responseMsg": "Transaction not found", "params": {}}
+
+FAKE_ACCOUNT = {
+	"merchant_id": "M-FAKE-0001",
+	"user_id": "fake-user",
+	"merchant_key": "fake-api-key-not-real",
+	"store_id": "fake-store",
+	"hpp_key": "fake-hpp-key-not-real",
+	"staging": 1,
+}
+
+
+def make_checkout_account():
+	"""Ticks a fake WaafiPay record for checkout in place of any other; callers roll back."""
+	frappe.db.set_value("WaafiPay", {"use_for_checkout": 1}, "use_for_checkout", 0)
+	return frappe.get_doc(
+		{
+			"doctype": "WaafiPay",
+			"gateway_name": "WaafiPay Test Checkout",
+			"use_for_checkout": 1,
+			**FAKE_ACCOUNT,
+		}
+	).insert(ignore_permissions=True)
 
 
 def fake_post(lookup):
@@ -50,23 +73,34 @@ class TestHelpers(UnitTestCase):
 		self.assertEqual(client.mask_phone("252611111111"), "25261*****11")
 		self.assertNotIn("252611111111", str(client.scrub({"accountNo": "252611111111", "apiKey": "k"})))
 
+	def test_credentials_come_from_the_one_ticked_account(self):
+		row = frappe._dict(
+			name="WP-1", merchant_id=" M-1 ", user_id="user", store_id="store", staging=0, endpoint=None
+		)
+		with (
+			patch.object(frappe, "get_all", return_value=[row]),
+			patch.object(api, "_secret", side_effect=lambda doctype, name, field: f"{name}:{field}"),
+		):
+			creds = api.credentials()
+		self.assertEqual(
+			(creds.merchant_uid, creds.api_user_id, creds.api_key, creds.store_id, creds.hpp_key),
+			("M-1", "user", "WP-1:merchant_key", "store", "WP-1:hpp_key"),
+		)
+		self.assertEqual(creds.url, client.LIVE_URL)
+		for rows in ([], [row, row]):
+			with patch.object(frappe, "get_all", return_value=rows):
+				self.assertIsNone(api.credentials())
+
+	def test_endpoint_is_used_only_outside_the_sandbox(self):
+		creds = client.Credentials(merchant_uid="M-1", live_url="https://live.example/asm")
+		self.assertEqual(creds.url, client.SANDBOX_URL)
+		self.assertEqual(replace(creds, sandbox=False).url, "https://live.example/asm")
+
 
 class TestTransactions(IntegrationTestCase):
 	def setUp(self):
 		frappe.db.savepoint("payments_case")
-		settings = frappe.get_single("WaafiPay Settings")
-		settings.update(
-			{
-				"enabled": 1,
-				"sandbox": 1,
-				"merchant_uid": "M-FAKE-0001",
-				"api_user_id": "fake-user",
-				"api_key": "fake-api-key-not-real",
-				"store_id": "fake-store",
-				"hpp_key": "fake-hpp-key-not-real",
-			}
-		)
-		settings.save(ignore_permissions=True)
+		self.account = make_checkout_account()
 		self.todo = frappe.get_doc({"doctype": "ToDo", "description": "payments test"}).insert(
 			ignore_permissions=True
 		)
@@ -91,6 +125,19 @@ class TestTransactions(IntegrationTestCase):
 		self.assertRaises(
 			frappe.ValidationError, frappe.delete_doc, api.DOCTYPE, tx.name, ignore_permissions=True
 		)
+
+	def test_only_one_account_is_used_for_checkout(self):
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc(
+				{"doctype": "WaafiPay", "gateway_name": "WaafiPay Second", "use_for_checkout": 1}
+			).insert(ignore_permissions=True)
+
+	def test_checkout_is_unavailable_without_a_ticked_account(self):
+		self.account.db_set("use_for_checkout", 0)
+		self.assertIsNone(api.credentials())
+		with self.assertRaises(api.PaymentError) as raised:
+			api.check("card")
+		self.assertEqual(raised.exception.code, "gateway_unavailable")
 
 	def test_start_refuses_bad_input(self):
 		for kwargs, code in (

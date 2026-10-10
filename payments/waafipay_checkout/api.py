@@ -22,7 +22,7 @@ from payments.waafipay_checkout import client
 from payments.waafipay_checkout.client import GatewayError
 
 DOCTYPE = "WaafiPay Transaction"
-SETTINGS = "WaafiPay Settings"
+ACCOUNT = "WaafiPay"
 GATEWAY = "waafipay"
 CURRENCY = "USD"
 WALLET_METHODS = ("evc_plus", "zaad", "sahal")
@@ -108,17 +108,25 @@ def _secret(doctype, name, field) -> str | None:
 	return get_decrypted_password(doctype, name, field, raise_exception=False)
 
 
-def credentials(require_enabled: bool = True) -> client.Credentials | None:
-	values = frappe.db.get_singles_dict(SETTINGS)
-	if (require_enabled and not cint(values.get("enabled"))) or not values.get("merchant_uid"):
+def credentials() -> client.Credentials | None:
+	"""Keys of the one WaafiPay record ticked "Use for Hosted Checkout"; None when there is none."""
+	rows = frappe.get_all(
+		ACCOUNT,
+		filters={"use_for_checkout": 1},
+		fields=["name", "merchant_id", "user_id", "store_id", "staging", "endpoint"],
+		limit=2,
+	)
+	if len(rows) != 1 or not rows[0].merchant_id:
 		return None
+	row = rows[0]
 	return client.Credentials(
-		merchant_uid=values.get("merchant_uid"),
-		api_user_id=values.get("api_user_id") or None,
-		api_key=_secret(SETTINGS, SETTINGS, "api_key"),
-		store_id=values.get("store_id") or None,
-		hpp_key=_secret(SETTINGS, SETTINGS, "hpp_key"),
-		sandbox=cint(values.get("sandbox", 1)) == 1,
+		merchant_uid=row.merchant_id.strip(),
+		api_user_id=(row.user_id or "").strip() or None,
+		api_key=_secret(ACCOUNT, row.name, "merchant_key"),
+		store_id=(row.store_id or "").strip() or None,
+		hpp_key=_secret(ACCOUNT, row.name, "hpp_key"),
+		sandbox=cint(row.staging) == 1,
+		live_url=row.endpoint or client.LIVE_URL,
 	)
 
 
@@ -302,7 +310,7 @@ def charge_wallet(transaction: str):
 	_commit()
 	phone_secret = _secret(DOCTYPE, transaction, "payer_phone")
 	remove_encrypted_password(DOCTYPE, transaction, "payer_phone")
-	creds = credentials(require_enabled=False)
+	creds = credentials()
 	if not phone_secret or not creds or not creds.can_charge_wallet:
 		_finish(transaction, "failed", UNAVAILABLE, expect=("processing",))
 		_commit()
@@ -362,7 +370,7 @@ def _lookup(row, token=None) -> client.Result | None:
 	"""Asks WaafiPay by reference (and by the browser's result token); GatewayError only if no lookup answered."""
 	if row.status == "pending" and row.method in WALLET_METHODS:
 		return None
-	creds = credentials(require_enabled=False)
+	creds = credentials()
 	if not creds or not creds.can_use_hpp:
 		return None
 	unreachable = False

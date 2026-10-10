@@ -31,7 +31,7 @@ All general utils are stored in [utils](payments/utils) directory. The utils are
 
 [waafipay_checkout](payments/waafipay_checkout) is a WaafiPay checkout for Frappe apps such as Bilyeeti. It does not need ERPNext. It supports EVC Plus, ZAAD and SAHAL wallets, and cards on the hosted payment page, in USD only.
 
-- **WaafiPay Settings** (Single): merchant UID, API user and key for wallets, store ID and HPP key for cards, and a sandbox switch. The keys are encrypted.
+- **WaafiPay**: the checkout uses the one WaafiPay record that has **Use for Hosted Checkout** set. Wallets need Merchant ID, User ID and Merchant Key. Cards also need Store ID and HPP Key. **Demo** selects the WaafiPay sandbox. Otherwise the checkout sends requests to **Endpoint**, which must start with `https://`. The keys are encrypted. When no record has the setting, new payments are refused with `gateway_unavailable` and open payments cannot be verified.
 - **WaafiPay Transaction**: one record for each gateway payment. It links to the record of the caller through `reference_doctype` and `reference_name`.
 - `payments.waafipay_checkout.api` is the Python API (not whitelisted): `check`, `start`, `verify`, `get`, `expire_stale`. It raises `PaymentError` with a `code`, and `GatewayError` when WaafiPay cannot be reached.
 - WaafiPay sends the browser back to `/api/method/payments.waafipay_checkout.api_public.waafipay_return?ref=<referenceId>`. The payment is verified again before the browser goes to the `return_path` of the transaction.

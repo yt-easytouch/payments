@@ -37,10 +37,11 @@ class Credentials:
 	store_id: str | None = None
 	hpp_key: str | None = field(default=None, repr=False)
 	sandbox: bool = True
+	live_url: str = LIVE_URL
 
 	@property
 	def url(self) -> str:
-		return SANDBOX_URL if self.sandbox else LIVE_URL
+		return SANDBOX_URL if self.sandbox else self.live_url
 
 	@property
 	def can_charge_wallet(self) -> bool:
