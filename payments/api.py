@@ -2,7 +2,7 @@ import frappe
 import json
 from contextlib import contextmanager
 
-from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+from payments.utils import erpnext_app_import_guard
 
 
 @contextmanager
@@ -365,6 +365,9 @@ def create_payment_entry(
     remarks: str = None,
 ):
     """Create and submit a Payment Entry linked to doc (SI or SO)."""
+    with erpnext_app_import_guard():
+        from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+
     if isinstance(doc, str):
         doc = _load_doc(doc)
 
