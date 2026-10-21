@@ -808,7 +808,7 @@ def process_order_payments(sales_order, payment_method: dict, payment_allocation
     payload = {
         "payment_number": payment_method.get("payment_number"),
         "wallet_amount":  payment_allocation.get("wallet_used", 0) if payment_method.get("balance") else 0,
-        "loyalty_points": payment_allocation.get("point_amount", 0) if payment_method.get("point") else 0,
+        "loyalty_points": payment_allocation.get("loyalty_points_used", 0) if payment_method.get("point") else 0,
         "payments":       payments,
     }
 
