@@ -72,9 +72,12 @@ class DahabPay(Document):
 
 	@staticmethod
 	def _extract_error_message(response):
-		errors = response.get("validationErrors") or []
+		lowered = {str(key).lower(): value for key, value in response.items()}
+		errors = lowered.get("validationerrors") or lowered.get("errors") or []
+		if isinstance(errors, dict):
+			errors = [{"Property": key, "ErrorMessage": value} for key, value in errors.items()]
 		details = "; ".join(
-			f"{error.get('Property')}: {error.get('ErrorMessage')}"
+			f"{error.get('Property') or error.get('property')}: {error.get('ErrorMessage') or error.get('errorMessage')}"
 			for error in errors
 			if isinstance(error, dict)
 		)

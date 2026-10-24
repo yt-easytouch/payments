@@ -1,5 +1,6 @@
 import frappe
 import json
+import re
 from contextlib import contextmanager
 
 from frappe import _
@@ -899,5 +900,6 @@ def process_payment_gateway(mode_of_payment, amount, invoice_name, phone_number)
     gateway_doc = frappe.get_doc("Payment Gateway", payment_gateway)
     gateway_controller = frappe.get_doc(gateway_doc.gateway_settings, gateway_doc.gateway_controller)
     
+    phone_number = remove_country_code(re.sub(r"\D", "", str(phone_number or ""))).lstrip("0")
     return gateway_controller.make_purchase(phone_number, amount, invoice_name)
 

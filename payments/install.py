@@ -21,7 +21,8 @@ def create_custom_fields_from_json(custom_fields_map):
             if frappe.db.exists("Custom Field", {"dt": doctype, "fieldname": fieldname}):
                 continue
 
-          
+            if field.get("fieldtype") == "Table" and not frappe.db.exists("DocType", field.get("options")):
+                continue
 
             field_doc = {
                 "doctype": "Custom Field",
@@ -36,6 +37,7 @@ def create_custom_fields_from_json(custom_fields_map):
                 "reqd": field.get("reqd", 0),
                 "hidden": field.get("hidden", 0),
                 "depends_on": field.get("depends_on"),
+                "collapsible": field.get("collapsible", 0),
             }
 
             frappe.get_doc(field_doc).insert(ignore_permissions=True)
@@ -64,6 +66,22 @@ def delete_custom_fields_from_json(custom_fields_map):
 # -------------------------
 
 CUSTOM_FIELDS_JSON = {
+    "Customer": [
+        {
+            "fieldname": "custom_payment_numbers_section",
+            "label": "Payment Numbers",
+            "fieldtype": "Section Break",
+            "insert_after": "primary_address",
+            "collapsible": 1,
+        },
+        {
+            "fieldname": "custom_payment_numbers",
+            "label": "Payment Numbers",
+            "fieldtype": "Table",
+            "options": "Customer Payment Number",
+            "insert_after": "custom_payment_numbers_section",
+        },
+    ],
     "Mode of Payment": [
         {
             "fieldname": "receiver_info",
