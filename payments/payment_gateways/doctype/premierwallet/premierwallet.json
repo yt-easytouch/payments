@@ -7,11 +7,13 @@
  "engine": "InnoDB",
  "field_order": [
   "gateway_name",
-  "merchant_id",
+  "user_id",
   "merchant_key",
+  "machine_id",
   "staging",
   "column_break_4",
-  "user_id",
+  "merchant_id",
+  "category",
   "endpoint"
  ],
  "fields": [
@@ -24,17 +26,24 @@
   },
   {
    "depends_on": "eval: !doc.staging",
-   "fieldname": "merchant_id",
+   "fieldname": "user_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Merchant ID",
+   "label": "Login Username",
    "mandatory_depends_on": "eval: !doc.staging"
   },
   {
    "depends_on": "eval: !doc.staging",
    "fieldname": "merchant_key",
    "fieldtype": "Password",
-   "label": "Merchant Key",
+   "label": "Login Password",
+   "mandatory_depends_on": "eval: !doc.staging"
+  },
+  {
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "machine_id",
+   "fieldtype": "Data",
+   "label": "Machine ID",
    "mandatory_depends_on": "eval: !doc.staging"
   },
   {
@@ -49,14 +58,22 @@
   },
   {
    "depends_on": "eval: !doc.staging",
-   "fieldname": "user_id",
+   "fieldname": "merchant_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "User ID",
+   "label": "Merchant ID (LoginUserName)",
    "mandatory_depends_on": "eval: !doc.staging"
   },
   {
-   "default": "https://autovapi.com/premierwallets",
+   "default": "1",
+   "depends_on": "eval: !doc.staging",
+   "fieldname": "category",
+   "fieldtype": "Int",
+   "label": "Category",
+   "description": "Other=1, Food=2, Fun=3, Gift=4, Shopping=5, Groceries=6, BillPayment=7, Car=8, Entertainment=9, Gasoline=10, Transport=11"
+  },
+  {
+   "default": "https://api.premierwallets.com/",
    "depends_on": "eval: !doc.staging",
    "fieldname": "endpoint",
    "fieldtype": "Data",
@@ -66,7 +83,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-07-28 14:44:11.694851",
+ "modified": "2026-11-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Payment Gateways",
  "name": "Premierwallet",

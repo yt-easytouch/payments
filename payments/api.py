@@ -884,22 +884,38 @@ def create_payment_from_invoice(sales_invoice,phone_number,mode_of_payment):
     }
 
 
-def process_payment_gateway(mode_of_payment, amount, invoice_name, phone_number):
-    """Process payment through gateway"""
+def get_gateway_controller(mode_of_payment):
+    """Return the gateway settings doc behind a Mode of Payment, or None."""
     gateway_account = frappe.get_value(
         "Mode of Payment", {"name": mode_of_payment}, "payment_gateway_account"
     )
-    
     if not gateway_account:
-        return {"status": False, "message": "Payment gateway not configured"}
-    
+        return None
+
     payment_gateway = frappe.get_value(
         "Payment Gateway Account", {"name": gateway_account}, "payment_gateway"
     )
-    
     gateway_doc = frappe.get_doc("Payment Gateway", payment_gateway)
-    gateway_controller = frappe.get_doc(gateway_doc.gateway_settings, gateway_doc.gateway_controller)
-    
+    return frappe.get_doc(gateway_doc.gateway_settings, gateway_doc.gateway_controller)
+
+
+def process_payment_gateway(mode_of_payment, amount, invoice_name, phone_number):
+    """Process payment through gateway"""
+    gateway_controller = get_gateway_controller(mode_of_payment)
+    if not gateway_controller:
+        return {"status": False, "message": "Payment gateway not configured"}
+
     phone_number = remove_country_code(re.sub(r"\D", "", str(phone_number or ""))).lstrip("0")
     return gateway_controller.make_purchase(phone_number, amount, invoice_name)
+
+
+def check_payment_gateway(mode_of_payment, transaction_id):
+    """Check a pending payment once, for gateways that confirm later (e.g. Premier Wallet)."""
+    gateway_controller = get_gateway_controller(mode_of_payment)
+    if not gateway_controller:
+        return {"status": False, "message": "Payment gateway not configured"}
+    if not hasattr(gateway_controller, "check_payment"):
+        return {"status": False, "message": "Payment gateway does not support status checks"}
+
+    return gateway_controller.check_payment(transaction_id)
 
