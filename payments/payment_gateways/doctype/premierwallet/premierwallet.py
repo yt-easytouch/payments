@@ -164,19 +164,21 @@ class Premierwallet(Document):
 		data = response.get("Data") or {}
 		status = str(data.get("Status"))
 		is_paid = self.is_success(response) and status in STATUS_EXECUTED
-		is_pending = self.is_success(response) and status not in STATUS_EXECUTED + STATUS_REJECTED
+		is_rejected = self.is_success(response) and status in STATUS_REJECTED
+		is_pending = self.is_success(response) and not (is_paid or is_rejected)
 		if is_paid:
 			message = ""
 		elif is_pending:
 			message = _("Waiting for the customer to approve the payment in Premier Wallet.")
-		elif self.is_success(response):
-			message = _("Payment status: {0}").format(data.get("Status"))
+		elif is_rejected:
+			message = _("The customer rejected the payment in Premier Wallet.")
 		else:
 			message = self._extract_error_message(response)
 
 		return {
 			"status": is_paid,
 			"pending": is_pending,
+			"rejected": is_rejected,
 			"transactionId": data.get("TransactionId") if is_paid else None,
 			"invoiceId": data.get("TransactionId") or data.get("TransactionID"),
 			"response": response,

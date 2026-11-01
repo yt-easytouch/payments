@@ -482,7 +482,7 @@ def call_payment_gateway(
     except Exception as exc:
         res = {"status": False, "message": str(exc)}
 
-    if res.get("status"):
+    if res.get("status") or res.get("pending"):
         res["_fault_type"] = None
         return res
 
@@ -701,6 +701,17 @@ def process_payment(doc, payload):
             phone_number=phone,
         )
 
+        # The customer approves later; the caller polls confirm_pending_payment.
+        if gw_res.get("pending"):
+            return {
+                "status":          False,
+                "pending":         True,
+                "transaction_id":  gw_res.get("invoiceId"),
+                "mode_of_payment": mop,
+                "amount":          amount,
+                "message":         gw_res.get("response_massage"),
+            }
+
         # ── Gateway failed ────────────────────────────────────────────────────
         if not gw_res.get("status"):
             fault_type = gw_res.get("_fault_type", "customer")
@@ -727,45 +738,56 @@ def process_payment(doc, payload):
                 "message":    reason,
             }
 
-        # ── Gateway succeeded ─────────────────────────────────────────────────
-        txn_ref = (
-            gw_res.get("payment_id") or
-            gw_res.get("transactionId") or
-            doc.name
-        )
-
-        if doc.meta.has_field("payments") and getattr(doc, "is_pos", 0):
-            doc.append("payments", {
-                "mode_of_payment":   mop,
-                "amount":            amount,
-                "payment_reference": txn_ref,
-                "processed_by":      frappe.session.user,
-            })
-            doc.save(ignore_permissions=True)
-        else:
-            create_payment_entry(
-                doc=doc,
-                amount=amount,
-                mode_of_payment=mop,
-                reference_no=txn_ref,
-            )
-
-        if doc.meta.has_field("custom_payment_status"):
-            if doc.docstatus == 0:
-                doc.custom_payment_status = "Paid"
-                doc.save(ignore_permissions=True)
-            else:
-                doc.db_set("custom_payment_status", "Paid")
-
-        _log_success(
-            doc.name,
-            payload,
-            f"Gateway payment of {amount} via {mop} successful (ref: {txn_ref})",
-            gateway_response=gw_res,
-        )
+        record_gateway_payment(doc, mop, amount, gw_res, payload)
         result["gateway_responses"].append(gw_res)
 
     return result
+
+
+def record_gateway_payment(doc, mode_of_payment: str, amount: float, gw_res: dict, payload: dict = None):
+    """Book a successful gateway charge against doc and mark it Paid."""
+    txn_ref = (
+        gw_res.get("payment_id") or
+        gw_res.get("transactionId") or
+        doc.name
+    )
+
+    if doc.meta.has_field("payments") and getattr(doc, "is_pos", 0):
+        doc.append("payments", {
+            "mode_of_payment":   mode_of_payment,
+            "amount":            amount,
+            "payment_reference": txn_ref,
+            "processed_by":      frappe.session.user,
+        })
+        doc.save(ignore_permissions=True)
+    else:
+        create_payment_entry(
+            doc=doc,
+            amount=amount,
+            mode_of_payment=mode_of_payment,
+            reference_no=txn_ref,
+        )
+
+    if doc.meta.has_field("custom_payment_status"):
+        if doc.docstatus == 0:
+            doc.custom_payment_status = "Paid"
+            doc.save(ignore_permissions=True)
+        else:
+            doc.db_set("custom_payment_status", "Paid")
+
+    _log_success(
+        doc.name,
+        payload,
+        f"Gateway payment of {amount} via {mode_of_payment} successful (ref: {txn_ref})",
+        gateway_response=gw_res,
+    )
+
+
+def release_unpaid_order(doc_name: str, reason: str, gw_res: dict = None):
+    """Undo an order whose pending gateway payment failed, as a declined charge does."""
+    _log_failure(doc_name, reason, fault_type="customer", gateway_response=gw_res)
+    if frappe.db.exists("Sales Invoice", doc_name):
+        _cancel_or_delete_invoice(doc_name, reason)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -815,10 +837,14 @@ def process_order_payments(sales_order, payment_method: dict, payment_allocation
 
     res = process_payment(sales_order, payload)
     return {
-        "status":        res.get("status", False),
-        "redirect_page": "completed" if res.get("status") else None,
-        "fault_type":    res.get("fault_type"),
-        "message":       res.get("message"),
+        "status":          res.get("status", False),
+        "redirect_page":   "completed" if res.get("status") else None,
+        "fault_type":      res.get("fault_type"),
+        "message":         res.get("message"),
+        "pending":         res.get("pending", False),
+        "transaction_id":  res.get("transaction_id"),
+        "mode_of_payment": res.get("mode_of_payment"),
+        "amount":          res.get("amount"),
     }
 
 
@@ -918,4 +944,15 @@ def check_payment_gateway(mode_of_payment, transaction_id):
         return {"status": False, "message": "Payment gateway does not support status checks"}
 
     return gateway_controller.check_payment(transaction_id)
+
+
+def reverse_payment_gateway(mode_of_payment, transaction_id):
+    """Refund a gateway payment, for gateways that support reversal (e.g. Premier Wallet)."""
+    gateway_controller = get_gateway_controller(mode_of_payment)
+    if not gateway_controller:
+        return {"status": False, "message": "Payment gateway not configured"}
+    if not hasattr(gateway_controller, "reverse_payment"):
+        return {"status": False, "message": "Payment gateway does not support reversal"}
+
+    return gateway_controller.reverse_payment(transaction_id)
 

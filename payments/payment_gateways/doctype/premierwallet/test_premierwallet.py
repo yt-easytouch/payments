@@ -158,11 +158,12 @@ class TestPremierwallet(unittest.TestCase):
 
 		self.assertFalse(result["status"])
 		self.assertFalse(result["pending"])
+		self.assertTrue(result["rejected"])
 		self.assertIsNone(result["transactionId"])
-		self.assertIn("Rejected", result["response_massage"])
+		self.assertIn("rejected", result["response_massage"])
 
 	@patch("requests.post")
-	def test_check_payment_api_error_is_not_pending(self, post):
+	def test_check_payment_api_error_is_not_a_rejection(self, post):
 		error = {"Response": {"Code": "005", "Messages": "Not found", "Errors": []}}
 		post.side_effect = [mock_response(LOGIN), mock_response(error)]
 
@@ -170,6 +171,7 @@ class TestPremierwallet(unittest.TestCase):
 
 		self.assertFalse(result["status"])
 		self.assertFalse(result["pending"])
+		self.assertFalse(result["rejected"])
 		self.assertEqual(result["response_massage"], "[005] Not found")
 
 	@patch("requests.post")
