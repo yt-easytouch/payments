@@ -202,6 +202,38 @@ class TestPremierwallet(unittest.TestCase):
 		self.assertEqual(post.call_args.kwargs["json"], {"TransactionID": "TX1", "LoginUserName": "420588"})
 		self.assertTrue(post.call_args.args[0].endswith("/api/PushPaymentReversal"))
 
+	@patch("frappe.only_for", MagicMock())
+	@patch("requests.post")
+	def test_test_login_ignores_cached_token(self, post):
+		frappe.cache.set_value("premierwallet_token:Test", "old")
+		post.return_value = mock_response(LOGIN)
+
+		result = make_settings().test_login()
+
+		self.assertTrue(result["status"])
+		self.assertEqual(self.endpoints(post), ["MerchantLogin"])
+		self.assertEqual(frappe.cache.get_value("premierwallet_token:Test"), "tok")
+
+	@patch("frappe.only_for", MagicMock())
+	@patch("requests.post")
+	def test_test_login_reports_rejected_credentials(self, post):
+		post.return_value = mock_response({}, 401)
+
+		result = make_settings().test_login()
+
+		self.assertFalse(result["status"])
+		self.assertIn("401", result["message"])
+
+	@patch("frappe.only_for", MagicMock())
+	@patch("requests.post")
+	def test_test_login_reports_missing_token(self, post):
+		post.return_value = mock_response({"Response": {"Code": "002", "Messages": "Invalid user"}})
+
+		result = make_settings().test_login()
+
+		self.assertFalse(result["status"])
+		self.assertIn("Invalid user", result["message"])
+
 	def test_unsupported_currency_is_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			make_settings().validate_transaction_currency("EUR")

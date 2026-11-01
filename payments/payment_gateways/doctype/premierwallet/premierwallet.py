@@ -87,6 +87,19 @@ class Premierwallet(Document):
 		frappe.cache.set_value(self.token_cache_key, token, expires_in_sec=TOKEN_TTL)
 		return token
 
+	@frappe.whitelist()
+	def test_login(self) -> dict:
+		"""Log in with the saved credentials, without the cached token. Charges nothing."""
+		frappe.only_for("System Manager")
+		frappe.cache.delete_value(self.token_cache_key)
+		try:
+			self.get_token()
+		except AuthenticationExpired:
+			return {"status": False, "message": _("Login rejected (401). Check the username and password.")}
+		except (requests.RequestException, ValueError, frappe.AuthenticationError) as e:
+			return {"status": False, "message": str(e)}
+		return {"status": True, "message": _("Login successful.")}
+
 	def _post(self, api_endpoint, payload):
 		try:
 			try:
