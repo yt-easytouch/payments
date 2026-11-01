@@ -71,7 +71,20 @@ class Premierwallet(Document):
 		response = requests.post(url, json=payload, headers=self.get_headers(authorization), timeout=(5, 30))
 		if response.status_code == 401:
 			raise AuthenticationExpired
-		response.raise_for_status()
+		if response.status_code >= 400:
+			frappe.logger("premierwallet").warning(
+				{
+					"endpoint": api_endpoint,
+					"status": response.status_code,
+					"request": payload,
+					"body": response.text,
+				}
+			)
+			# Keep the API's own reason; raise_for_status alone hides it.
+			raise requests.HTTPError(
+				f"{response.status_code} {response.reason} for {api_endpoint}: {response.text[:500]}",
+				response=response,
+			)
 		result = response.json()
 		frappe.logger("premierwallet").info({"endpoint": api_endpoint, "response": result})
 		return result

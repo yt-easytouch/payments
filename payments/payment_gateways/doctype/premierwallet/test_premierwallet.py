@@ -183,6 +183,19 @@ class TestPremierwallet(unittest.TestCase):
 		self.assertFalse(result["pending"])
 		self.assertEqual(result["response_massage"], "[002] Wallet not found (CustomerWalletID)")
 
+	@patch("requests.post")
+	def test_bad_request_shows_api_reason(self, post):
+		bad_request = mock_response({}, 400)
+		bad_request.reason = "Bad Request"
+		bad_request.text = '{"Errors":["Amount must be a string"]}'
+		post.side_effect = [mock_response(LOGIN), bad_request]
+
+		result = make_settings().make_purchase("615000000", 5, "SINV-1")
+
+		self.assertFalse(result["status"])
+		self.assertIn("400 Bad Request for PushPayment", result["response_massage"])
+		self.assertIn("Amount must be a string", result["response_massage"])
+
 	@patch("requests.post", side_effect=requests.ConnectionError("timeout"))
 	def test_network_error_returns_failure(self, post):
 		result = make_settings().make_purchase("615000000", 5, "SINV-1")
