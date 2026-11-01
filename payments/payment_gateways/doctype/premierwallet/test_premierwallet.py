@@ -9,7 +9,6 @@ from payments.payment_gateways.doctype.premierwallet.premierwallet import Premie
 
 OK = {"Code": "001", "Messages": "Transaction Successful.", "Errors": []}
 LOGIN = {"Response": OK, "Data": {"Token": "tok"}}
-WALLET = {"Response": OK, "Data": {"WalletId": "00252615000000", "Name": "TEST"}}
 PUSHED = {"Response": OK, "Data": {"TransactionID": "TX1"}}
 
 
@@ -66,18 +65,18 @@ class TestPremierwallet(unittest.TestCase):
 
 	@patch("requests.post")
 	def test_push_returns_pending_with_transaction_id(self, post):
-		post.side_effect = [mock_response(r) for r in (LOGIN, WALLET, PUSHED)]
+		post.side_effect = [mock_response(r) for r in (LOGIN, PUSHED)]
 
 		result = make_settings().make_purchase("615000000", 5, "SINV-1")
 
 		self.assertFalse(result["status"])
 		self.assertTrue(result["pending"])
 		self.assertEqual(result["invoiceId"], "TX1")
-		self.assertEqual(self.endpoints(post), ["MerchantLogin", "GetUserQRDetailByUserID", "PushPayment"])
+		self.assertEqual(self.endpoints(post), ["MerchantLogin", "PushPayment"])
 
 	@patch("requests.post")
 	def test_login_uses_basic_auth_and_partner_headers(self, post):
-		post.side_effect = [mock_response(r) for r in (LOGIN, WALLET, PUSHED)]
+		post.side_effect = [mock_response(r) for r in (LOGIN, PUSHED)]
 
 		make_settings().make_purchase("615000000", 5, "SINV-1")
 
@@ -91,13 +90,12 @@ class TestPremierwallet(unittest.TestCase):
 
 	@patch("requests.post")
 	def test_push_payment_payload(self, post):
-		post.side_effect = [mock_response(r) for r in (LOGIN, WALLET, PUSHED)]
+		post.side_effect = [mock_response(r) for r in (LOGIN, PUSHED)]
 
 		make_settings().make_purchase("+252 61 500 0000", 5, "SINV-1")
 
-		self.assertEqual(post.call_args_list[1].kwargs["json"], {"UserId": "252615000000"})
 		self.assertEqual(
-			post.call_args_list[2].kwargs["json"],
+			post.call_args_list[1].kwargs["json"],
 			{
 				"CustomerWalletID": "00252615000000",
 				"Amount": 5.0,
@@ -109,22 +107,22 @@ class TestPremierwallet(unittest.TestCase):
 
 	@patch("requests.post")
 	def test_token_is_cached_between_calls(self, post):
-		post.side_effect = [mock_response(r) for r in (LOGIN, WALLET, WALLET)]
+		post.side_effect = [mock_response(r) for r in (LOGIN, details("New"), details("New"))]
 		settings = make_settings()
 
-		settings.get_wallet("252615000000")
-		settings.get_wallet("252615000000")
+		settings.check_payment("TX1")
+		settings.check_payment("TX1")
 
 		self.assertEqual(self.endpoints(post).count("MerchantLogin"), 1)
 
 	@patch("requests.post")
 	def test_expired_token_logs_in_again(self, post):
 		frappe.cache.set_value("premierwallet_token:Test", "old")
-		post.side_effect = [mock_response({}, 401), mock_response(LOGIN), mock_response(WALLET)]
+		post.side_effect = [mock_response({}, 401), mock_response(LOGIN), mock_response(details("New"))]
 
-		response = make_settings().get_wallet("252615000000")
+		result = make_settings().check_payment("TX1")
 
-		self.assertEqual(response, WALLET)
+		self.assertTrue(result["pending"])
 		self.assertEqual(post.call_args_list[2].kwargs["headers"]["Authorization"], "Bearer tok")
 
 	@patch("requests.post")
@@ -175,15 +173,15 @@ class TestPremierwallet(unittest.TestCase):
 		self.assertEqual(result["response_massage"], "[005] Not found")
 
 	@patch("requests.post")
-	def test_unknown_wallet_returns_error_message(self, post):
-		error = {"Response": {"Code": "002", "Messages": "User not found", "Errors": ["UserId"]}}
+	def test_push_error_returns_error_message(self, post):
+		error = {"Response": {"Code": "002", "Messages": "Wallet not found", "Errors": ["CustomerWalletID"]}}
 		post.side_effect = [mock_response(LOGIN), mock_response(error)]
 
 		result = make_settings().make_purchase("615000000", 5, "SINV-1")
 
 		self.assertFalse(result["status"])
-		self.assertEqual(result["response_massage"], "[002] User not found (UserId)")
-		self.assertNotIn("PushPayment", self.endpoints(post))
+		self.assertFalse(result["pending"])
+		self.assertEqual(result["response_massage"], "[002] Wallet not found (CustomerWalletID)")
 
 	@patch("requests.post", side_effect=requests.ConnectionError("timeout"))
 	def test_network_error_returns_failure(self, post):
@@ -237,6 +235,10 @@ class TestPremierwallet(unittest.TestCase):
 	def test_unsupported_currency_is_rejected(self):
 		with self.assertRaises(frappe.ValidationError):
 			make_settings().validate_transaction_currency("EUR")
+
+	def test_wallet_id_is_double_zero_and_country_code(self):
+		for number in ("615000000", "0615000000", "252615000000", "00252615000000"):
+			self.assertEqual(Premierwallet.get_wallet_id(number), "00252615000000")
 
 	def test_normalize_phone_number_adds_country_code(self):
 		for number in ("615000000", "0615000000", "252615000000", "00252615000000", "+252 61 500 0000"):

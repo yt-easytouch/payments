@@ -48,6 +48,11 @@ class Premierwallet(Document):
 			number = number[3:]
 		return "252" + number.lstrip("0")
 
+	@classmethod
+	def get_wallet_id(cls, account_no) -> str:
+		"""Premier Wallet ID is 00 + the number with country code, e.g. 00252615000000."""
+		return "00" + cls.normalize_phone_number(account_no)
+
 	@property
 	def token_cache_key(self) -> str:
 		return f"premierwallet_token:{self.gateway_name}"
@@ -154,13 +159,8 @@ class Premierwallet(Document):
 
 		self.validate_transaction_currency(currency)
 
-		user_id = self.normalize_phone_number(account_no)
-		wallet = self.get_wallet(user_id)
-		if not self.is_success(wallet):
-			return self._result(wallet, request={"UserId": user_id})
-
 		payload = {
-			"CustomerWalletID": wallet["Data"]["WalletId"],
+			"CustomerWalletID": self.get_wallet_id(account_no),
 			"Amount": float(amount),
 			"Remarks": str(invoice_id or ""),
 			"Category": self.category or 1,
@@ -198,9 +198,6 @@ class Premierwallet(Document):
 			"request": request,
 			"response_massage": message,
 		}
-
-	def get_wallet(self, user_id):
-		return self._post("GetUserQRDetailByUserID", {"UserId": user_id})
 
 	def reverse_payment(self, transaction_id):
 		response = self._post(
