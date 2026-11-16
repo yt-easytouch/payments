@@ -16,7 +16,11 @@
   "hpp_section",
   "use_hpp",
   "store_id",
-  "hpp_key"
+  "hpp_key",
+  "webhook_section",
+  "webhook_url",
+  "webhook_id",
+  "webhook_secret"
  ],
  "fields": [
   {
@@ -88,6 +92,32 @@
    "fieldtype": "Password",
    "label": "HPP Key",
    "mandatory_depends_on": "use_hpp"
+  },
+  {
+   "depends_on": "use_hpp",
+   "fieldname": "webhook_section",
+   "fieldtype": "Section Break",
+   "label": "Webhook"
+  },
+  {
+   "description": "WaafiPay posts payment results here. Use Register Webhook to send it to WaafiPay.",
+   "fieldname": "webhook_url",
+   "fieldtype": "Data",
+   "label": "Webhook URL",
+   "read_only": 1,
+   "is_virtual": 1
+  },
+  {
+   "fieldname": "webhook_id",
+   "fieldtype": "Data",
+   "label": "Webhook ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

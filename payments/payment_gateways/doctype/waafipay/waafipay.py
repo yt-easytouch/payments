@@ -1,8 +1,11 @@
 import frappe
+import hashlib
+import hmac
 import json
 import uuid
 import time
 import requests
+from urllib.parse import quote
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import call_hook_method, get_url
@@ -11,6 +14,23 @@ from payments.utils import erpnext_app_import_guard
 
 HPP_RETURN_METHOD = "payments.payment_gateways.doctype.waafipay.waafipay.hpp_return"
 HPP_REJECTED_STATES = ("declined", "failed", "cancelled", "canceled", "rejected", "expired")
+HPP_WEBHOOK_METHOD = "payments.payment_gateways.doctype.waafipay.waafipay.webhook"
+WEBHOOK_TOLERANCE_SECONDS = 300
+
+
+def mask_secrets(payload):
+    safe = frappe.parse_json(frappe.as_json(payload or {}))
+    params = safe.get("serviceParams") or {}
+    for key in ("apiKey", "hppKey"):
+        if params.get(key):
+            params[key] = "***"
+    return safe
+
+
+def public_url(path):
+    """WaafiPay and the phone must reach these; site_config `waafipay_public_url` (e.g. a tunnel) wins over the site URL."""
+    base = frappe.conf.get("waafipay_public_url")
+    return f"{base.rstrip('/')}{path}" if base else get_url(path)
 
 class WaafiPay(Document):
 
@@ -48,30 +68,29 @@ class WaafiPay(Document):
             frappe.logger("waafipay").info({
                 "status": "OK",
                 "endpoint": endpoint,
-                "payload": payload,
+                "payload": mask_secrets(payload),
                 "response": res
             })
 
             return res
 
         except requests.RequestException as e:
-            error_data = {
-                "status": False,
-                "message": str(e),
-                "payload": payload
-            }
             frappe.log_error(
                 title="WaafiPay Request Error",
-                message=frappe.as_json(error_data)
+                message=frappe.as_json({"error": str(e), "payload": mask_secrets(payload)})
             )
-            return error_data
+            if isinstance(e, (requests.Timeout, requests.ConnectionError)):
+                message = _("WaafiPay is not responding right now. Please try again in a moment.")
+            else:
+                message = _("WaafiPay could not take the payment right now. Please try again.")
+            return {"status": False, "message": message, "payload": mask_secrets(payload)}
 
         except Exception as e:
             frappe.log_error(
                 title="WaafiPay Unexpected Error",
                 message=frappe.get_traceback()
             )
-            return {"status": False, "message": str(e), "payload": payload}
+            return {"status": False, "message": str(e), "payload": mask_secrets(payload)}
 
     def request_for_payment(self, **kwargs):
         """
@@ -220,7 +239,7 @@ class WaafiPay(Document):
 
     def make_hpp_purchase(self, account_no, amount, invoice_id):
         """Open a Hosted Payment Page; the payer pays there and check_payment confirms it."""
-        return_url = get_url(f"/api/method/{HPP_RETURN_METHOD}")
+        return_url = public_url(f"/api/method/{HPP_RETURN_METHOD}")
         data = self._build_request("HPP_PURCHASE")
         data["serviceParams"] = self._hpp_params(
             paymentMethod="MWALLET_ACCOUNT",
@@ -240,9 +259,9 @@ class WaafiPay(Document):
             data["serviceParams"]["payerInfo"] = {
                 "subscriptionId": number if number.startswith("252") else f"252{number}"
             }
-
         response = self._post(data)
         params = response.get("params") or {}
+
         if response.get("responseMsg") != "RCS_SUCCESS" or not params.get("hppUrl"):
             return {
                 "status": False,
@@ -297,6 +316,49 @@ class WaafiPay(Document):
             "response": response,
             "response_massage": self._extract_error_message(response),
         }
+
+    @property
+    def webhook_url(self):
+        if self.is_new():
+            return ""
+        return public_url(f"/api/method/{HPP_WEBHOOK_METHOD}?gateway={quote(self.name)}")
+
+    @frappe.whitelist()
+    def register_webhook(self):
+        """Register this gateway's webhook URL with WaafiPay, or point the existing one here."""
+        frappe.only_for("System Manager")
+        if not self.webhook_url.startswith("https://"):
+            frappe.throw(_("WaafiPay needs a public HTTPS address. This site's URL is {0}.").format(self.webhook_url))
+
+        service = "WEBHOOK_UPDATE" if self.webhook_id else "WEBHOOK_REGISTER"
+        data = self._build_request(service)
+        data["serviceParams"] = self._hpp_params(url=self.webhook_url, description=f"Easytouch {self.name}")
+        if self.webhook_id:
+            data["serviceParams"]["webhookId"] = self.webhook_id
+
+        response = self._post(data)
+        params = response.get("params") or {}
+        if response.get("responseMsg") != "RCS_SUCCESS":
+            frappe.throw(self._extract_error_message(response), title=_("Webhook not registered"))
+
+        # WaafiPay returns the secret only when it creates one.
+        if params.get("secret"):
+            self.webhook_secret = params["secret"]
+        self.webhook_id = str(params.get("webhookId") or self.webhook_id or "")
+        self.save()
+        return {"webhook_id": self.webhook_id, "webhook_url": self.webhook_url}
+
+    def verify_webhook(self, timestamp, event_id, signature, body: bytes) -> bool:
+        secret = self.get_password("webhook_secret", raise_exception=False)
+        if not (secret and timestamp and event_id and signature):
+            return False
+        try:
+            if abs(time.time() - int(timestamp)) > WEBHOOK_TOLERANCE_SECONDS:
+                return False
+        except ValueError:
+            return False
+        expected = hmac.new(secret.encode(), f"{timestamp}.{event_id}.".encode() + body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, signature.strip().lower())
 
     def cancel_transaction(self, transaction_id, description="Cancel"):
         data = self._build_request("API_CANCELPURCHASE")
@@ -393,9 +455,47 @@ def hpp_return(result=None, **kwargs):
 <style>body{{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
 font:16px -apple-system,system-ui,sans-serif;color:#333;text-align:center;padding:24px;box-sizing:border-box}}</style>
 </head><body><p>{frappe.utils.escape_html(message)}</p>
-<script>try{{window.parent.postMessage({{type:"waafipay-hpp",result:"{result}"}},"*")}}catch(e){{}}</script>
+<script>var m={{type:"waafipay-hpp",result:"{result}"}};
+try{{if(window.opener){{window.opener.postMessage(m,"*");setTimeout(function(){{window.close()}},800)}}else if(window.parent!==window){{window.parent.postMessage(m,"*")}}}}catch(e){{}}</script>
 </body></html>"""
     return Response(html, content_type="text/html; charset=utf-8")
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def webhook(**kwargs):
+    """WaafiPay payment events. Signed with the webhook secret; apps confirm through check_payment."""
+    headers = frappe.request.headers
+    body = frappe.request.get_data()
+    # A JSON body replaces form_dict, so the query string has to be read directly.
+    gateway = frappe.request.args.get("gateway")
+    if not (gateway and frappe.db.exists("WaafiPay", gateway)):
+        return Response("unknown gateway", status=404)
+
+    settings = frappe.get_doc("WaafiPay", gateway)
+    if not settings.verify_webhook(
+        headers.get("X-Webhook-Timestamp"),
+        headers.get("X-Webhook-Event-Id"),
+        headers.get("X-Webhook-Signature"),
+        body,
+    ):
+        frappe.logger("waafipay").warning({"webhook": "bad signature", "gateway": gateway})
+        return Response("invalid signature", status=401)
+
+    event = json.loads(body or b"{}")
+    payment = event.get("payment") or {}
+    frappe.logger("waafipay").info({"webhook": event, "event_id": headers.get("X-Webhook-Event-Id")})
+
+    # Answer 200 even when handling fails; the polling and the log pick it up instead of 8 retries.
+    if payment.get("reference_id"):
+        frappe.set_user("Administrator")
+        for method in frappe.get_hooks("payment_gateway_webhook"):
+            try:
+                frappe.get_attr(method)(reference_id=payment["reference_id"], event=event)
+            except Exception:
+                frappe.db.rollback()
+                frappe.log_error(title=f"WaafiPay webhook handler failed: {method}")
+
+    return Response("ok", status=200)
 
 
 @frappe.whitelist()
