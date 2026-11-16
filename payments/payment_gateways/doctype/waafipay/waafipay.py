@@ -5,8 +5,12 @@ import time
 import requests
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import call_hook_method
+from frappe.utils import call_hook_method, get_url
+from werkzeug.wrappers import Response
 from payments.utils import erpnext_app_import_guard
+
+HPP_RETURN_METHOD = "payments.payment_gateways.doctype.waafipay.waafipay.hpp_return"
+HPP_REJECTED_STATES = ("declined", "failed", "cancelled", "canceled", "rejected", "expired")
 
 class WaafiPay(Document):
 
@@ -131,6 +135,9 @@ class WaafiPay(Document):
 
     def make_purchase(self, account_no, amount, invoice_id, payment_details=None, provider=None, **kwargs):
         """Make payment request to WaafiPay."""
+        if self.use_hpp:
+            return self.make_hpp_purchase(account_no, amount, invoice_id)
+
         if self.staging == 1:
             return {
                 "status": True,
@@ -201,6 +208,94 @@ class WaafiPay(Document):
             "response": response,
             "request": safe_request,
             "response_massage": response_message
+        }
+
+    def _hpp_params(self, **params):
+        return {
+            "merchantUid": self.merchant_id,
+            "storeId": self.store_id,
+            "hppKey": self.get_password("hpp_key"),
+            **params,
+        }
+
+    def make_hpp_purchase(self, account_no, amount, invoice_id):
+        """Open a Hosted Payment Page; the payer pays there and check_payment confirms it."""
+        return_url = get_url(f"/api/method/{HPP_RETURN_METHOD}")
+        data = self._build_request("HPP_PURCHASE")
+        data["serviceParams"] = self._hpp_params(
+            paymentMethod="MWALLET_ACCOUNT",
+            hppSuccessCallbackUrl=f"{return_url}?result=success",
+            hppFailureCallbackUrl=f"{return_url}?result=failure",
+            hppRespDataFormat=2,
+            transactionInfo={
+                # A retried order must not reuse a reference WaafiPay has already seen.
+                "referenceId": f"{invoice_id}-{frappe.generate_hash(length=6)}",
+                "amount": f"{float(amount):.2f}",
+                "currency": "USD",
+                "description": f"Payment for {invoice_id}",
+            },
+        )
+        if account_no:
+            number = str(account_no).lstrip("0")
+            data["serviceParams"]["payerInfo"] = {
+                "subscriptionId": number if number.startswith("252") else f"252{number}"
+            }
+
+        response = self._post(data)
+        params = response.get("params") or {}
+        if response.get("responseMsg") != "RCS_SUCCESS" or not params.get("hppUrl"):
+            return {
+                "status": False,
+                "response": response,
+                "response_massage": self._extract_error_message(response),
+            }
+
+        return {
+            "status": False,
+            "pending": True,
+            "invoiceId": params.get("referenceId") or data["serviceParams"]["transactionInfo"]["referenceId"],
+            "payment_url": params["hppUrl"],
+            "response": response,
+            "response_massage": _("Complete the payment on the WaafiPay page."),
+        }
+
+    def get_hpp_transaction(self, reference_id):
+        data = self._build_request("HPP_GETTRANINFO")
+        data["serviceParams"] = self._hpp_params(referenceId=reference_id)
+        return self._post(data)
+
+    def check_payment(self, transaction_id):
+        """Check a Hosted Payment Page once; callers repeat it while `pending` is true."""
+        response = self.get_hpp_transaction(transaction_id)
+        params = response.get("params") or {}
+        state = str(params.get("status") or params.get("tranStatusDesc") or "").lower()
+        is_paid = response.get("responseMsg") == "RCS_SUCCESS" and state == "approved"
+        is_rejected = state in HPP_REJECTED_STATES
+
+        return {
+            "status": is_paid,
+            "pending": not (is_paid or is_rejected),
+            "rejected": is_rejected,
+            "transactionId": params.get("transactionId"),
+            "response": response,
+            "response_massage": "" if is_paid else self._extract_error_message(response),
+        }
+
+    def reverse_payment(self, transaction_id):
+        """Refund a Hosted Payment Page charge in full."""
+        params = self.get_hpp_transaction(transaction_id).get("params") or {}
+        data = self._build_request("HPP_REFUNDPURCHASE")
+        data["serviceParams"] = self._hpp_params(
+            referenceId=transaction_id,
+            amount=str(params.get("amount") or params.get("tranAmount") or ""),
+            description="Order refund",
+        )
+        response = self._post(data)
+        state = str((response.get("params") or {}).get("state") or "").lower()
+        return {
+            "status": response.get("responseMsg") == "RCS_SUCCESS" and state == "approved",
+            "response": response,
+            "response_massage": self._extract_error_message(response),
         }
 
     def cancel_transaction(self, transaction_id, description="Cancel"):
@@ -286,6 +381,21 @@ def create_mode_of_payment(gateway, payment_type="General"):
         return mode_of_payment
     elif mode_of_payment:
         return frappe.get_doc("Mode of Payment", mode_of_payment)
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
+def hpp_return(result=None, **kwargs):
+    """Where WaafiPay sends the payer back. It tells the app; the payment is only trusted after check_payment."""
+    result = "success" if result == "success" else "failure"
+    message = _("Payment received. Finishing your order…") if result == "success" else _("The payment was not completed.")
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+font:16px -apple-system,system-ui,sans-serif;color:#333;text-align:center;padding:24px;box-sizing:border-box}}</style>
+</head><body><p>{frappe.utils.escape_html(message)}</p>
+<script>try{{window.parent.postMessage({{type:"waafipay-hpp",result:"{result}"}},"*")}}catch(e){{}}</script>
+</body></html>"""
+    return Response(html, content_type="text/html; charset=utf-8")
 
 
 @frappe.whitelist()

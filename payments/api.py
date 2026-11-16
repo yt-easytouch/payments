@@ -707,6 +707,7 @@ def process_payment(doc, payload):
                 "status":          False,
                 "pending":         True,
                 "transaction_id":  gw_res.get("invoiceId"),
+                "payment_url":     gw_res.get("payment_url"),
                 "mode_of_payment": mop,
                 "amount":          amount,
                 "message":         gw_res.get("response_massage"),

@@ -12,7 +12,11 @@
   "staging",
   "column_break_4",
   "user_id",
-  "endpoint"
+  "endpoint",
+  "hpp_section",
+  "use_hpp",
+  "store_id",
+  "hpp_key"
  ],
  "fields": [
   {
@@ -58,12 +62,38 @@
    "fieldname": "endpoint",
    "fieldtype": "Data",
    "label": "Endpoint"
+  },
+  {
+   "fieldname": "hpp_section",
+   "fieldtype": "Section Break",
+   "label": "Hosted Payment Page"
+  },
+  {
+   "default": "0",
+   "description": "Customers pay on the WaafiPay page shown in the app instead of a USSD push.",
+   "fieldname": "use_hpp",
+   "fieldtype": "Check",
+   "label": "Use Hosted Payment Page"
+  },
+  {
+   "depends_on": "use_hpp",
+   "fieldname": "store_id",
+   "fieldtype": "Data",
+   "label": "Store ID",
+   "mandatory_depends_on": "use_hpp"
+  },
+  {
+   "depends_on": "use_hpp",
+   "fieldname": "hpp_key",
+   "fieldtype": "Password",
+   "label": "HPP Key",
+   "mandatory_depends_on": "use_hpp"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 10:58:05.224420",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Payment Gateways",
  "name": "WaafiPay",
