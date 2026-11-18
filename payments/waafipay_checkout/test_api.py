@@ -21,7 +21,11 @@ def approved(reference, amount="12.50", transaction="T-1"):
 	return {"responseCode": "2001", "responseMsg": "RCS_SUCCESS", "params": params}
 
 
-NOT_FOUND = {"responseCode": "5310", "responseMsg": "Transaction not found", "params": {}}
+def record_user(row, event):
+	frappe.local.payments_test_users.append(frappe.session.user)
+
+
+NOT_FOUND ={"responseCode": "5310", "responseMsg": "Transaction not found", "params": {}}
 
 FAKE_ACCOUNT = {
 	"merchant_id": "M-FAKE-0001",
@@ -178,6 +182,41 @@ class TestTransactions(IntegrationTestCase):
 		row = api.get(tx.name)
 		self.assertEqual((row.status, row.provider_ref), ("expired", "T-LATE"))
 		self.assertIn("T-LATE", row.review_note)
+
+	def test_declined_card_start_is_failed_before_the_error(self):
+		decline = {"responseCode": "5206", "responseMsg": "Declined", "params": {}}
+		with (
+			patch.object(client.requests, "post", return_value=Response(decline)),
+			patch.object(api, "_commit") as commit,
+			self.assertRaises(api.PaymentError) as raised,
+		):
+			api.start("ToDo", self.todo.name, 1250, "USD", "card")
+		self.assertEqual(raised.exception.code, "gateway_declined")
+		self.assertEqual(api.get(raised.exception.transaction).status, "failed")
+		self.assertEqual(commit.call_count, 2)
+
+	def test_guest_return_runs_handlers_as_administrator(self):
+		tx = self.start_card()
+		users = []
+		handlers = {"ToDo": ["payments.waafipay_checkout.test_api.record_user"]}
+		get_hooks = frappe.get_hooks
+
+		def hooks(hook=None, *args, **kwargs):
+			return handlers if hook == "payment_handlers" else get_hooks(hook, *args, **kwargs)
+
+		frappe.set_user("Guest")
+		try:
+			with (
+				patch.object(frappe, "get_hooks", side_effect=hooks),
+				patch.object(client.requests, "post", fake_post(lambda ref: approved(ref))),
+				patch.object(frappe.local, "payments_test_users", users, create=True),
+			):
+				api_public.waafipay_return(ref=tx.reference_id)
+			self.assertEqual(frappe.session.user, "Guest")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(users, ["Administrator"])
+		self.assertEqual(api.get(tx.name).status, "paid")
 
 	def test_return_page_redirects_to_the_stored_path_only(self):
 		tx = self.start_card(return_path="https://evil.example/")

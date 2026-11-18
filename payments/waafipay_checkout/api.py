@@ -273,9 +273,11 @@ def _open_hosted_page(name, creds: client.Credentials, base_url) -> frappe._dict
 		)
 	except GatewayError:
 		_finish(name, "failed", UNAVAILABLE, expect=("pending",))
+		_commit()
 		raise PaymentError("gateway_unavailable", name)
 	if not result.success or not (result.hpp_url or "").startswith("https://"):
 		_finish(name, "failed", DECLINED, result, expect=("pending",))
+		_commit()
 		raise PaymentError("gateway_declined", name)
 	with _atomic():
 		locked = _lock(name)
@@ -432,8 +434,17 @@ def _event(kind: str, before, result: client.Result | None) -> frappe._dict:
 
 
 def _notify(row, event):
-	for path in frappe.get_hooks("payment_handlers", {}).get(row.reference_doctype) or []:
-		frappe.get_attr(path)(row, event)
+	handlers = frappe.get_hooks("payment_handlers", {}).get(row.reference_doctype) or []
+	# the guest return page settles payments too; handlers must not fail on Guest permissions
+	user = frappe.session.user
+	if handlers and user == "Guest":
+		frappe.set_user("Administrator")
+	try:
+		for path in handlers:
+			frappe.get_attr(path)(row, event)
+	finally:
+		if frappe.session.user != user:
+			frappe.set_user(user)
 
 
 def _update(before, values: dict, kind: str, result: client.Result | None = None):
