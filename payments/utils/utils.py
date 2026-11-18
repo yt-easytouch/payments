@@ -200,6 +200,12 @@ def before_install():
 		return False
 
 
+def before_tests():
+	"""Set up ERPNext's company and accounts when ERPNext is installed."""
+	if "erpnext" in frappe.get_installed_apps():
+		frappe.get_attr("erpnext.setup.utils.before_tests")()
+
+
 @contextmanager
 def erpnext_app_import_guard():
 	marketplace_link = '<a href="https://frappecloud.com/marketplace/apps/erpnext">Marketplace</a>'

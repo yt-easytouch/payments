@@ -5,11 +5,15 @@ import unittest
 from json import dumps
 
 import frappe
-from erpnext.accounts.doctype.payment_entry.test_payment_entry import create_customer
-from erpnext.accounts.doctype.pos_invoice.test_pos_invoice import create_pos_invoice
-from erpnext.accounts.doctype.pos_opening_entry.test_pos_opening_entry import create_opening_entry
-from erpnext.accounts.doctype.pos_profile.test_pos_profile import make_pos_profile
-from erpnext.stock.doctype.item.test_item import make_item
+
+try:
+	from erpnext.accounts.doctype.payment_entry.test_payment_entry import create_customer
+	from erpnext.accounts.doctype.pos_invoice.test_pos_invoice import create_pos_invoice
+	from erpnext.accounts.doctype.pos_opening_entry.test_pos_opening_entry import create_opening_entry
+	from erpnext.accounts.doctype.pos_profile.test_pos_profile import make_pos_profile
+	from erpnext.stock.doctype.item.test_item import make_item
+except ImportError:
+	pass
 
 from payments.payment_gateways.doctype.mpesa_settings.mpesa_settings import (
 	create_mode_of_payment,
@@ -19,6 +23,12 @@ from payments.payment_gateways.doctype.mpesa_settings.mpesa_settings import (
 
 
 class TestMpesaSettings(unittest.TestCase):
+	@classmethod
+	def setUpClass(cls):
+		if "erpnext" not in frappe.get_installed_apps():
+			raise unittest.SkipTest("Mpesa Settings tests need ERPNext")
+		super().setUpClass()
+
 	def setUp(self):
 		# create payment gateway in setup
 		create_mpesa_settings(payment_gateway_name="_Test")
