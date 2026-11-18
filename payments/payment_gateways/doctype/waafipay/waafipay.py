@@ -7,6 +7,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import call_hook_method
 from payments.utils import erpnext_app_import_guard
+from payments.waafipay_checkout.client import SANDBOX_URL
 
 class WaafiPay(Document):
     
@@ -25,7 +26,7 @@ class WaafiPay(Document):
             frappe.throw(_("The endpoint must start with https:// for hosted checkout."))
 
     def _get_endpoint(self):
-        return "http://sandbox.waafipay.net/asm" if self.staging == 1 else self.endpoint
+        return SANDBOX_URL if self.staging == 1 else self.endpoint
 
     def validate_transaction_currency(self, currency):
         if currency not in self.supported_currencies:
